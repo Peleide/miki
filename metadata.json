@@ -1,0 +1,8 @@
+{
+  "name": "MIKI - Suivi de Pointage",
+  "description": "Application de suivi de nettoyage et maintenance multi-tenant avec assistance IA.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}

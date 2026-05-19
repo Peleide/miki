@@ -1,0 +1,50 @@
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // --- FONCTIONS HELPER ---
+
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    // Vérifie si l'utilisateur est un Admin Plateforme
+    function isPlatformAdmin() {
+      let data = getUserData();
+      return (data.tenantsAccess.platform == 'ADMIN') || 
+             (data.accessibleTenantIds is list && data.accessibleTenantIds.hasAny(['platform']));
+    }
+
+    // Vérifie si l'utilisateur a accès au Tenant demandé
+    // CORRECTIF : On vérifie la map tenantsAccess OU la liste accessibleTenantIds (legacy)
+    function hasTenantAccess(tenantId) {
+      let userData = getUserData();
+      return (tenantId in userData.tenantsAccess) || 
+             (userData.accessibleTenantIds is list && userData.accessibleTenantIds.hasAny([tenantId])) ||
+             isPlatformAdmin();
+    }
+
+    // --- REGLES DE SECURITE ---
+
+    match /users/{userId} {
+      allow read: if request.auth != null;
+      allow write: if false; 
+    }
+
+    match /tenants/{tenantId} {
+      allow read: if request.auth != null && hasTenantAccess(tenantId);
+      allow write: if false; 
+      
+      match /{document=**} {
+        allow read: if request.auth != null && hasTenantAccess(tenantId);
+        allow write: if false; 
+      }
+    }
+
+    match /audit_logs/{logId} {
+      allow read: if request.auth != null && isPlatformAdmin();
+      allow write: if false;
+    }
+  }
+}
