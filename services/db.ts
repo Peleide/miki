@@ -334,8 +334,10 @@ class DatabaseService {
   }
   
   async getTenantsForUser(user: User): Promise<Tenant[]> {
+    const isGlobalAdmin = user.role === UserRole.ADMIN || user.tenantsAccess['platform'] === UserRole.ADMIN;
+    if (isGlobalAdmin) return this.getAllTenants();
+    
     const ids = Object.keys(user.tenantsAccess).filter(id => id !== 'platform');
-    if (user.role === UserRole.ADMIN) return this.getAllTenants();
     const promises = ids.map(id => getDoc(doc(dbFirestore, 'tenants', id)));
     const snaps = await Promise.all(promises);
     return snaps.filter(s => s.exists()).map(s => ({ id: s.id, ...s.data() } as Tenant));
