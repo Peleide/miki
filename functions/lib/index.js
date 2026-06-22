@@ -319,6 +319,18 @@ exports.manageEquipment = functions
         await ref.set(Object.assign(Object.assign({}, payload), { id: ref.id, tenantId, qrCode: generateSecureQR(), status: payload.status || "AVAILABLE", usageCount: 0, isArchived: false }));
         return { success: true, id: ref.id };
     }
+    if (action === "CREATE_BATCH") {
+        const { items } = payload;
+        const batch = db.batch();
+        const ids = [];
+        for (const item of items) {
+            const ref = db.collection("tenants").doc(tenantId).collection("equipments").doc();
+            batch.set(ref, Object.assign(Object.assign({}, item), { id: ref.id, tenantId, qrCode: generateSecureQR(), status: item.status || "AVAILABLE", usageCount: 0, isArchived: false }));
+            ids.push(ref.id);
+        }
+        await batch.commit();
+        return { success: true, ids };
+    }
     if (action === "UPDATE") {
         const _a = payload.updates, { qrCode, id } = _a, safeUpdates = __rest(_a, ["qrCode", "id"]);
         await db.collection("tenants").doc(tenantId).collection("equipments").doc(payload.id).update(safeUpdates);

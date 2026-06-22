@@ -87,6 +87,10 @@ class DatabaseService {
       return await this.call('manageEquipment', { action: 'CREATE', tenantId: tid, payload: eq });
   }
 
+  async createEquipmentBatch(tid: string, items: Omit<Equipment, 'id' | 'tenantId' | 'qrCode'>[]) {
+      return await this.call('manageEquipment', { action: 'CREATE_BATCH', tenantId: tid, payload: { items } });
+  }
+
   async updateEquipment(equipmentId: string, updates: Partial<Equipment>, manager: User) {
       return await this.call('manageEquipment', { action: 'UPDATE', tenantId: manager.tenantId, payload: { id: equipmentId, updates: updates } });
   }

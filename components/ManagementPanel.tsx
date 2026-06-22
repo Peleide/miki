@@ -35,6 +35,9 @@ export const ManagementPanel: React.FC<ManagementPanelProps> = ({ user }) => {
   const [eqBatchQty, setEqBatchQty] = useState(1);
   const [eqInstructions, setEqInstructions] = useState('');
   
+  const [eqCreateMultiple, setEqCreateMultiple] = useState(false);
+  const [eqCreateMultipleQty, setEqCreateMultipleQty] = useState(1);
+  
   const [eqUsageLimit, setEqUsageLimit] = useState<number | ''>('');
   const [eqMaintDays, setEqMaintDays] = useState<number | ''>('');
   const [eqIsKit, setEqIsKit] = useState(false);
@@ -104,7 +107,7 @@ export const ManagementPanel: React.FC<ManagementPanelProps> = ({ user }) => {
                 isKit: eqIsKit, childEquipmentIds: eqIsKit ? eqChildIds : []
             }, user);
         } else {
-            await db.createEquipment(user.tenantId, {
+            const baseEq = {
                 name: eqName, type: eqType, subType: eqSubType, brand: eqBrand, 
                 model: eqModel, serialNumber: eqSerialNumber, uniqueId: eqUniqueId, 
                 isBatch: eqIsBatch, batchQuantity: eqIsBatch ? eqBatchQty : undefined,
@@ -113,8 +116,17 @@ export const ManagementPanel: React.FC<ManagementPanelProps> = ({ user }) => {
                 maintenanceIntervalDays: eqMaintDays !== '' ? Number(eqMaintDays) : undefined,
                 nextMaintenanceDate: eqMaintDays !== '' ? new Date(Date.now() + Number(eqMaintDays)*86400000).toISOString() : undefined,
                 isKit: eqIsKit, childEquipmentIds: eqIsKit ? eqChildIds : [],
-                status: 'AVAILABLE', usageCount: 0, isArchived: false
-            });
+                status: 'AVAILABLE' as const, usageCount: 0, isArchived: false
+            };
+            if (eqCreateMultiple && eqCreateMultipleQty > 1) {
+                const items = [];
+                for (let i = 0; i < eqCreateMultipleQty; i++) {
+                    items.push({ ...baseEq, name: `${eqName} (${i + 1})` });
+                }
+                await db.createEquipmentBatch(user.tenantId, items);
+            } else {
+                await db.createEquipment(user.tenantId, baseEq);
+            }
         }
         resetEqForm();
         await refreshData();
@@ -128,6 +140,7 @@ export const ManagementPanel: React.FC<ManagementPanelProps> = ({ user }) => {
   const resetEqForm = () => {
       setEqName(''); setEqType(''); setEqSubType(''); setEqBrand(''); setEqModel(''); 
       setEqSerialNumber(''); setEqUniqueId(''); setEqIsBatch(false); setEqBatchQty(1); setEqInstructions('');
+      setEqCreateMultiple(false); setEqCreateMultipleQty(1);
       setEqUsageLimit(''); setEqMaintDays(''); setEqIsKit(false); setEqChildIds([]);
       setEditingEq(null);
   };
@@ -353,15 +366,34 @@ export const ManagementPanel: React.FC<ManagementPanelProps> = ({ user }) => {
                     <input required placeholder="Nom (Ex: Perceuse #1)" value={eqName} onChange={e=>setEqName(e.target.value)} className="w-full p-4 bg-gray-50 border rounded-2xl text-xs font-bold focus:border-primary focus:outline-none"/>
                     <input required placeholder="Marque (Ex: Makita)" value={eqBrand} onChange={e=>setEqBrand(e.target.value)} className="w-full p-4 bg-gray-50 border rounded-2xl text-xs font-bold"/>
                     <input placeholder="Modèle" value={eqModel} onChange={e=>setEqModel(e.target.value)} className="w-full p-4 bg-gray-50 border rounded-2xl text-xs font-bold"/>
-                    <input placeholder="Numéro de série" value={eqSerialNumber} onChange={e=>setEqSerialNumber(e.target.value)} className="w-full p-4 bg-gray-50 border rounded-2xl text-xs font-bold"/>
-                    
-                    <div className="flex items-center gap-3 p-4 border rounded-2xl bg-gray-50 cursor-pointer" onClick={() => setEqIsBatch(!eqIsBatch)}>
-                        <input type="checkbox" checked={eqIsBatch} onChange={() => {}} className="w-5 h-5 accent-primary"/>
-                        <span className="text-xs font-bold text-dark uppercase">Gérer en lot / quantité</span>
+                    <div className="flex gap-2">
+                        <input placeholder="Numéro de série" value={eqSerialNumber} onChange={e=>setEqSerialNumber(e.target.value)} className="w-full p-4 bg-gray-50 border rounded-2xl text-xs font-bold"/>
+                        <input placeholder="ID Unique / Interne" value={eqUniqueId} onChange={e=>setEqUniqueId(e.target.value)} className="w-full p-4 bg-gray-50 border rounded-2xl text-xs font-bold"/>
                     </div>
+                    
+                    {!editingEq && !eqIsBatch && (
+                        <div className="flex flex-col gap-2 p-4 border rounded-2xl bg-gray-50">
+                            <div className="flex items-center gap-3 cursor-pointer" onClick={() => setEqCreateMultiple(!eqCreateMultiple)}>
+                                <input type="checkbox" checked={eqCreateMultiple} onChange={() => {}} className="w-5 h-5 accent-primary"/>
+                                <span className="text-xs font-bold text-dark uppercase">Créer plusieurs exemplaires (Unitaires)</span>
+                            </div>
+                            {eqCreateMultiple && (
+                                <input type="number" min="2" placeholder="Nombre d'exemplaires (ex: 24)" value={eqCreateMultipleQty} onChange={e=>setEqCreateMultipleQty(parseInt(e.target.value)||1)} className="w-full p-4 bg-primary/10 border-primary border rounded-2xl text-xs font-bold text-primary mt-2"/>
+                            )}
+                        </div>
+                    )}
 
-                    {eqIsBatch && (
-                        <input type="number" min="1" placeholder="Quantité en stock" value={eqBatchQty} onChange={e=>setEqBatchQty(parseInt(e.target.value)||0)} className="w-full p-4 bg-primary/10 border-primary border rounded-2xl text-xs font-bold text-primary"/>
+                    {!eqCreateMultiple && (
+                        <>
+                            <div className="flex items-center gap-3 p-4 border rounded-2xl bg-gray-50 cursor-pointer" onClick={() => setEqIsBatch(!eqIsBatch)}>
+                                <input type="checkbox" checked={eqIsBatch} onChange={() => {}} className="w-5 h-5 accent-primary"/>
+                                <span className="text-xs font-bold text-dark uppercase">Gérer en lot / quantité</span>
+                            </div>
+
+                            {eqIsBatch && (
+                                <input type="number" min="1" placeholder="Quantité en stock" value={eqBatchQty} onChange={e=>setEqBatchQty(parseInt(e.target.value)||0)} className="w-full p-4 bg-primary/10 border-primary border rounded-2xl text-xs font-bold text-primary"/>
+                            )}
+                        </>
                     )}
 
                     <textarea placeholder="Consignes d'utilisation..." value={eqInstructions} onChange={e=>setEqInstructions(e.target.value)} className="w-full p-4 bg-gray-50 border rounded-2xl text-xs font-bold resize-none h-24"/>
@@ -448,7 +480,12 @@ export const ManagementPanel: React.FC<ManagementPanelProps> = ({ user }) => {
                                     </span>
                                 </div>
                                 <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-1">{eq.brand} {eq.model}</p>
-                                {eq.serialNumber && <p className="text-[10px] font-bold text-dark uppercase mb-4">S/N: {eq.serialNumber}</p>}
+                                {(eq.serialNumber || eq.uniqueId) && (
+                                    <div className="mb-4">
+                                        {eq.serialNumber && <p className="text-[10px] font-bold text-dark uppercase">S/N: {eq.serialNumber}</p>}
+                                        {eq.uniqueId && <p className="text-[10px] font-bold text-primary uppercase">ID: {eq.uniqueId}</p>}
+                                    </div>
+                                )}
                                 {eq.isBatch && <span className="text-[10px] font-bold bg-primary/10 text-primary px-3 py-1 rounded-full uppercase mt-2 inline-block">Stock: {eq.batchQuantity}</span>}
                             </div>
                             <div className="flex justify-between items-center mt-6 pt-4 border-t">

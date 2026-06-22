@@ -358,6 +358,29 @@ export const manageEquipment = functions
       return { success: true, id: ref.id };
     }
 
+    if (action === "CREATE_BATCH") {
+      const { items } = payload;
+      const batch = db.batch();
+      const ids: string[] = [];
+      
+      for (const item of items) {
+        const ref = db.collection("tenants").doc(tenantId).collection("equipments").doc();
+        batch.set(ref, {
+          ...item,
+          id: ref.id,
+          tenantId,
+          qrCode: generateSecureQR(),
+          status: item.status || "AVAILABLE",
+          usageCount: 0,
+          isArchived: false,
+        });
+        ids.push(ref.id);
+      }
+      
+      await batch.commit();
+      return { success: true, ids };
+    }
+
     if (action === "UPDATE") {
       const { qrCode, id, ...safeUpdates } = payload.updates;
       await db.collection("tenants").doc(tenantId).collection("equipments").doc(payload.id).update(safeUpdates);
