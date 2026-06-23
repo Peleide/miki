@@ -716,7 +716,6 @@ export const ManagementPanel: React.FC<ManagementPanelProps> = ({ user }) => {
              </button>
           </div>
       )}
-      )}
     </div>
   );
 };
