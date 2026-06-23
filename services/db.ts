@@ -176,6 +176,9 @@ class DatabaseService {
     const tenantsAccess = data.tenantsAccess || {};
     
     // --- CORRECTIF DE SYNCHRONISATION ---
+    if (data.role === UserRole.ADMIN) {
+        tenantsAccess['platform'] = UserRole.ADMIN;
+    }
     if (data.accessibleTenantIds && Array.isArray(data.accessibleTenantIds)) {
         data.accessibleTenantIds.forEach((tid: string) => {
             if (!tenantsAccess[tid]) {
@@ -212,6 +215,11 @@ class DatabaseService {
     let needsRepair = false;
     const patchedAccess = { ...tenantsAccess };
     const patchedIds = [...storedIds];
+
+    if (data.role === UserRole.ADMIN && !patchedAccess['platform']) {
+        needsRepair = true;
+        patchedAccess['platform'] = UserRole.ADMIN;
+    }
 
     if (storedIds.length > 0) {
         storedIds.forEach((tid: string) => {
@@ -419,6 +427,12 @@ class DatabaseService {
     if (filters?.equipmentId) res = res.filter(c => c.equipmentId === filters.equipmentId);
     if (filters?.date) res = res.filter(c => c.timestamp.startsWith(filters.date));
     return res;
+  }
+
+  async getMaintenanceLogs(tid: string) {
+      const q = query(collection(dbFirestore, 'tenants', tid, 'maintenance_logs'), orderBy('timestamp', 'desc'));
+      const s = await getDocs(q);
+      return s.docs.map(d => ({ id: d.id, ...d.data() })) as any[];
   }
 
   async getIncidentReports(tid: string, status: 'OPEN' | 'IN_PROGRESS' | 'RESOLVED' | 'ARCHIVED' = 'OPEN') {

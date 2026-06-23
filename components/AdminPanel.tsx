@@ -272,7 +272,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
     <div className="p-6 max-w-7xl mx-auto space-y-10 relative pb-24 font-sans overflow-y-auto h-full no-scrollbar">
       <div className="flex flex-col md:flex-row items-center justify-between gap-8">
         <div>
-          <h2 className="text-3xl font-black text-dark tracking-tighter leading-none mb-2">Platform Console</h2>
+          <h2 className="text-3xl font-black text-dark tracking-tighter leading-none mb-2">Console Super Admin</h2>
           <p className="text-gray-400 text-sm font-medium tracking-tight">Pilotage des infrastructures MIKI.</p>
         </div>
         <div className="flex bg-white p-1.5 rounded-[20px] shadow-sm border border-border floating-light">

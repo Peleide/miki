@@ -1,14 +1,15 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { User, EquipmentLog, Equipment, UserRole, Tenant, IncidentReport } from '../types';
 import { db, TimeUtils } from '../services/db';
-import { Download, Filter, Search, Calendar, ChevronLeft, ChevronRight, Activity, MessageSquare, AlertTriangle, Inbox, CheckSquare, Zap, Clock, ShieldCheck, Database, RefreshCw, TrendingUp, PieChart, Info, Settings2 } from 'lucide-react';
+import { Download, Filter, Search, Calendar, ChevronLeft, ChevronRight, Activity, MessageSquare, AlertTriangle, Inbox, CheckSquare, Zap, Clock, ShieldCheck, Database, RefreshCw, TrendingUp, PieChart, Info, Settings2, Box, ArrowLeft, ClipboardList } from 'lucide-react';
 
 interface DashboardProps {
   user: User;
 }
 
 export const Dashboard: React.FC<DashboardProps> = ({ user }) => {
-  const [activeTab, setActiveTab] = useState<'metrics' | 'logs' | 'incidentReports'>('metrics');
+  const [activeTab, setActiveTab] = useState<'metrics' | 'logs' | 'incidentReports' | 'equipments'>('metrics');
+  const [selectedEquipment, setSelectedEquipment] = useState<Equipment | null>(null);
   const [reportStatusFilter, setReportStatusFilter] = useState<'OPEN' | 'ARCHIVED'>('OPEN');
   
   const todayStr = new Date().toISOString().slice(0, 10);
@@ -20,6 +21,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ user }) => {
   const [equipments, setEquipments] = useState<Equipment[]>([]);
   const [tenantUsers, setTenantUsers] = useState<User[]>([]);
   const [currentTenant, setCurrentTenant] = useState<Tenant | null>(null);
+  const [maintenanceLogs, setMaintenanceLogs] = useState<any[]>([]);
+  const [checklists, setChecklists] = useState<any[]>([]);
   
   const [isLoading, setIsLoading] = useState(false);
   const isManager = user.role === UserRole.MANAGER || user.role === UserRole.ADMIN;
@@ -39,12 +42,14 @@ export const Dashboard: React.FC<DashboardProps> = ({ user }) => {
             range = { start: addDays(filterStartDate, -1), end: addDays(filterEndDate, 1) };
         }
 
-        const [l, eq, u, t, rep] = await Promise.all([
+        const [l, eq, u, t, rep, mLogs, chks] = await Promise.all([
             db.getEquipmentLogs(user.tenantId, user.role, 500, range), 
             db.getEquipments(user.tenantId),
             db.getUsers(user.tenantId),
             db.getTenant(user.tenantId),
-            db.getIncidentReports(user.tenantId, reportStatusFilter)
+            db.getIncidentReports(user.tenantId, reportStatusFilter),
+            db.getMaintenanceLogs(user.tenantId),
+            db.getChecklists(user.tenantId)
         ]);
         
         setLogs(l); 
@@ -52,6 +57,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ user }) => {
         setTenantUsers(u); 
         setCurrentTenant(t || null);
         setReports(rep);
+        setMaintenanceLogs(mLogs);
+        setChecklists(chks);
       } catch (err) {
         console.error("Dashboard load error", err);
       } finally {
@@ -135,17 +142,19 @@ export const Dashboard: React.FC<DashboardProps> = ({ user }) => {
       <div className="p-4 sm:p-5 bg-white border-b border-border z-[100] shadow-sm shrink-0">
         <div className="max-w-7xl mx-auto flex items-center justify-between gap-3 sm:gap-6">
           <div className="flex items-center gap-3 shrink-0">
-             <div className="bg-gray-100 p-1 rounded-xl flex items-center">
-                 <button onClick={() => setActiveTab('metrics')} className={`flex items-center gap-2 px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'metrics' ? 'bg-white shadow-sm text-primary' : 'text-gray-400'}`}>
-                     <PieChart size={14} /> KPi
-                 </button>
-                 <button onClick={() => setActiveTab('logs')} className={`flex items-center gap-2 px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'logs' ? 'bg-white shadow-sm text-primary' : 'text-gray-400'}`}>
-                     <Activity size={14} /> Historique
-                 </button>
-                 <button onClick={() => setActiveTab('incidentReports')} className={`flex items-center gap-2 px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'incidentReports' ? 'bg-white shadow-sm text-primary' : 'text-gray-400'}`}>
-                     <MessageSquare size={14} /> Tickets
-                     {incidentReports.length > 0 && reportStatusFilter === 'OPEN' && <span className="bg-danger text-white px-1.5 py-0.5 rounded-full text-[9px]">{incidentReports.length}</span>}
-                 </button>
+             <div className="flex gap-2 p-1 bg-gray-50 border border-gray-100 rounded-[20px] overflow-x-auto no-scrollbar">
+                <button onClick={() => {setActiveTab('metrics'); setSelectedEquipment(null);}} className={`flex items-center gap-2 px-5 py-3 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] transition-all whitespace-nowrap ${activeTab === 'metrics' ? 'bg-white shadow-sm text-primary' : 'text-gray-400 hover:bg-gray-100'}`}>
+                    <Activity size={16}/> Vue d'ensemble
+                </button>
+                <button onClick={() => {setActiveTab('equipments'); setSelectedEquipment(null);}} className={`flex items-center gap-2 px-5 py-3 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] transition-all whitespace-nowrap ${activeTab === 'equipments' ? 'bg-white shadow-sm text-primary' : 'text-gray-400 hover:bg-gray-100'}`}>
+                    <Box size={16}/> Objets & Suivi
+                </button>
+                <button onClick={() => {setActiveTab('logs'); setSelectedEquipment(null);}} className={`flex items-center gap-2 px-5 py-3 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] transition-all whitespace-nowrap ${activeTab === 'logs' ? 'bg-white shadow-sm text-primary' : 'text-gray-400 hover:bg-gray-100'}`}>
+                    <Database size={16}/> Historique Global
+                </button>
+                <button onClick={() => {setActiveTab('incidentReports'); setSelectedEquipment(null);}} className={`flex items-center gap-2 px-5 py-3 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] transition-all whitespace-nowrap ${activeTab === 'incidentReports' ? 'bg-white shadow-sm text-primary' : 'text-gray-400 hover:bg-gray-100'}`}>
+                    <AlertTriangle size={16}/> Tickets {incidentReports.filter(r=>r.status==='OPEN').length > 0 && <span className="bg-danger text-white px-1.5 py-0.5 rounded-md text-[8px]">{incidentReports.filter(r=>r.status==='OPEN').length}</span>}
+                </button>
              </div>
           </div>
 
@@ -323,6 +332,145 @@ export const Dashboard: React.FC<DashboardProps> = ({ user }) => {
                                   {rep.message && <div className="text-sm font-medium text-gray-600 bg-gray-50 p-4 rounded-2xl italic leading-relaxed border border-gray-100 shadow-inner">"{rep.message}"</div>}
                               </div>
                           ))
+                      )}
+                  </div>
+              )}
+
+              {activeTab === 'equipments' && (
+                  <div className="animate-in fade-in">
+                      {!selectedEquipment ? (
+                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                              {equipments.map(eq => (
+                                  <div 
+                                    key={eq.id} 
+                                    onClick={() => setSelectedEquipment(eq)}
+                                    className="bg-white p-6 rounded-[32px] border border-border shadow-sm flex flex-col gap-2 cursor-pointer hover:shadow-xl hover:border-primary/30 transition-all group"
+                                  >
+                                      <div className="flex justify-between items-start">
+                                          <div className="bg-gray-50 p-3 rounded-2xl text-gray-400 group-hover:text-primary group-hover:bg-primary/10 transition-colors">
+                                              <Box size={24}/>
+                                          </div>
+                                          <div className={`px-2 py-1 rounded-lg text-[8px] font-black uppercase tracking-widest ${eq.status === 'AVAILABLE' ? 'bg-success/10 text-success' : eq.status === 'IN_USE' ? 'bg-orange-100 text-orange-600' : 'bg-danger/10 text-danger'}`}>
+                                              {eq.status}
+                                          </div>
+                                      </div>
+                                      <div className="mt-4">
+                                          <h3 className="font-black text-dark group-hover:text-primary transition-colors line-clamp-2">{eq.name}</h3>
+                                          <p className="text-[10px] font-black uppercase tracking-widest text-gray-400 mt-1">{eq.brand} • {eq.model}</p>
+                                      </div>
+                                  </div>
+                              ))}
+                              {equipments.length === 0 && (
+                                  <div className="col-span-full py-20 text-center text-gray-400 text-xs font-black uppercase tracking-widest">
+                                      Aucun objet répertorié.
+                                  </div>
+                              )}
+                          </div>
+                      ) : (
+                          <div className="space-y-6">
+                              <button 
+                                onClick={() => setSelectedEquipment(null)}
+                                className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-gray-500 hover:text-primary transition-colors"
+                              >
+                                  <ArrowLeft size={16}/> Retour aux objets
+                              </button>
+
+                              <div className="bg-white p-8 rounded-[40px] border border-border shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+                                  <div>
+                                      <div className="flex items-center gap-3 mb-2">
+                                        <h2 className="text-2xl font-black text-dark">{selectedEquipment.name}</h2>
+                                        <div className={`px-3 py-1 rounded-xl text-[10px] font-black uppercase tracking-widest ${selectedEquipment.status === 'AVAILABLE' ? 'bg-success/10 text-success' : selectedEquipment.status === 'IN_USE' ? 'bg-orange-100 text-orange-600' : 'bg-danger/10 text-danger'}`}>
+                                            {selectedEquipment.status}
+                                        </div>
+                                      </div>
+                                      <p className="text-xs font-black uppercase tracking-widest text-gray-400">{selectedEquipment.brand} • {selectedEquipment.model} • ID: {selectedEquipment.uniqueId}</p>
+                                  </div>
+                                  <div className="flex gap-4">
+                                      <div className="bg-gray-50 px-6 py-4 rounded-3xl border border-gray-100 text-center">
+                                          <div className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-1">Usages</div>
+                                          <div className="text-2xl font-black text-dark">{selectedEquipment.usageCount}</div>
+                                      </div>
+                                      <div className="bg-gray-50 px-6 py-4 rounded-3xl border border-gray-100 text-center">
+                                          <div className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-1">Proch. Maintenance</div>
+                                          <div className="text-sm font-black text-dark mt-2">{selectedEquipment.nextMaintenanceDate ? TimeUtils.formatInTimezone(selectedEquipment.nextMaintenanceDate, timezone, { dateStyle: 'short' }) : '-'}</div>
+                                      </div>
+                                  </div>
+                              </div>
+
+                              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                                  {/* Maintenance Checklists */}
+                                  <div className="bg-white rounded-[32px] p-6 shadow-sm border border-border">
+                                      <h3 className="font-black text-sm uppercase tracking-widest mb-6 text-dark flex items-center gap-2"><ClipboardList size={18} className="text-primary"/> Checklists & Maintenances</h3>
+                                      <div className="space-y-4 max-h-[500px] overflow-y-auto pr-2 no-scrollbar">
+                                          {maintenanceLogs.filter(m => m.equipmentId === selectedEquipment.id).map(m => (
+                                              <div key={m.id} className="p-4 border rounded-2xl flex flex-col gap-3 bg-gray-50/50">
+                                                  <div className="flex justify-between items-start">
+                                                      <div>
+                                                          <div className="font-black text-sm text-dark">{m.checklistNameSnapshot}</div>
+                                                          <div className="text-[10px] text-gray-500 font-black uppercase tracking-widest mt-1">Par: {m.userNameSnapshot}</div>
+                                                      </div>
+                                                      <span className="px-2 py-1 bg-white border text-gray-500 text-[9px] font-black rounded-lg uppercase tracking-widest">
+                                                          {TimeUtils.formatInTimezone(m.timestamp, timezone, { dateStyle: 'short', timeStyle: 'short' })}
+                                                      </span>
+                                                  </div>
+                                                  {m.answers && Object.entries(m.answers).length > 0 && (
+                                                      <div className="grid grid-cols-1 gap-2 mt-2 bg-white p-3 rounded-xl border">
+                                                          {Object.entries(m.answers).map(([key, val]: any, i) => (
+                                                              <div key={i} className="flex gap-2 text-[11px]">
+                                                                  <span className="font-bold text-gray-600 truncate flex-1">{checklists.find(c => c.items?.find((it:any) => it.id === key))?.items?.find((it:any) => it.id === key)?.label || 'Question'}:</span>
+                                                                  <span className="font-black text-dark truncate flex-1 text-right">{val.value !== undefined ? String(val.value) : 'N/A'}</span>
+                                                              </div>
+                                                          ))}
+                                                      </div>
+                                                  )}
+                                                  {m.generalNote && (
+                                                      <div className="text-xs italic text-gray-600 bg-amber-50 p-3 rounded-xl border border-amber-100">
+                                                          Note: {m.generalNote}
+                                                      </div>
+                                                  )}
+                                              </div>
+                                          ))}
+                                          {maintenanceLogs.filter(m => m.equipmentId === selectedEquipment.id).length === 0 && (
+                                              <div className="py-12 text-center text-gray-400 font-black uppercase tracking-widest text-[10px]">
+                                                  Aucune maintenance enregistrée.
+                                              </div>
+                                          )}
+                                      </div>
+                                  </div>
+
+                                  {/* Routine Logs */}
+                                  <div className="bg-white rounded-[32px] p-6 shadow-sm border border-border">
+                                      <h3 className="font-black text-sm uppercase tracking-widest mb-6 text-dark flex items-center gap-2"><Database size={18} className="text-primary"/> Historique des mouvements</h3>
+                                      <div className="space-y-3 max-h-[500px] overflow-y-auto pr-2 no-scrollbar">
+                                          {logs.filter(l => l.equipmentId === selectedEquipment.id).map(log => (
+                                              <div key={log.id} className="flex justify-between items-center p-4 border rounded-2xl hover:bg-gray-50/50 transition-colors">
+                                                  <div className="flex items-center gap-4">
+                                                      <div className={`px-2 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest ${
+                                                          log.action === 'TAKE' ? 'bg-primary/10 text-primary' :
+                                                          log.action === 'RETURN' ? 'bg-success/10 text-success' :
+                                                          log.action === 'REPORT' ? 'bg-danger/10 text-danger' :
+                                                          'bg-gray-100 text-gray-600'
+                                                      }`}>
+                                                          {log.action}
+                                                      </div>
+                                                      <div>
+                                                          <div className="font-black text-xs text-dark">{log.userNameSnapshot}</div>
+                                                          <div className="text-[10px] text-gray-400 font-medium">
+                                                              {TimeUtils.formatInTimezone(log.timestamp, timezone, { dateStyle: 'short', timeStyle: 'short' })}
+                                                          </div>
+                                                      </div>
+                                                  </div>
+                                              </div>
+                                          ))}
+                                          {logs.filter(l => l.equipmentId === selectedEquipment.id).length === 0 && (
+                                              <div className="py-12 text-center text-gray-400 font-black uppercase tracking-widest text-[10px]">
+                                                  Aucun mouvement enregistré.
+                                              </div>
+                                          )}
+                                      </div>
+                                  </div>
+                              </div>
+                          </div>
                       )}
                   </div>
               )}
