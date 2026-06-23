@@ -15,11 +15,10 @@ export const ManagementPanel: React.FC<ManagementPanelProps> = ({ user }) => {
   const [equipments, setEquipments] = useState<Equipment[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [checklists, setChecklists] = useState<any[]>([]);
-  const [maintenances, setMaintenances] = useState<any[]>([]);
   const [sites, setSites] = useState<Site[]>([]);
   const [tenant, setTenant] = useState<Tenant | undefined>(undefined);
   
-  const [activeTab, setActiveTab] = useState<'equipments' | 'users' | 'qrs' | 'checklists' | 'maintenances' | 'sites' | 'settings'>('equipments');
+  const [activeTab, setActiveTab] = useState<'equipments' | 'users' | 'qrs' | 'checklists' | 'sites' | 'settings'>('equipments');
   const [loading, setLoading] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
   const [isPrintMode, setIsPrintMode] = useState(false);
@@ -85,11 +84,6 @@ export const ManagementPanel: React.FC<ManagementPanelProps> = ({ user }) => {
         setTenant(tnt);
         setChecklists((chks as any).filter((c: any) => showArchived ? true : !c.isArchived));
         setSites((sts as any).filter((s: any) => showArchived ? true : s.status !== 'ARCHIVED'));
-        
-        if (activeTab === 'maintenances') {
-          const logs = await db.getMaintenanceLogs(user.tenantId);
-          setMaintenances(logs);
-        }
     } catch(e) {
         console.error(e);
     } finally {
@@ -345,7 +339,6 @@ export const ManagementPanel: React.FC<ManagementPanelProps> = ({ user }) => {
               {id: 'equipments', label: 'ÉQUIPEMENTS', icon: <Box size={14}/>}, 
               {id: 'users', label: 'COMPTES', icon: <UserIcon size={14}/>}, 
               {id: 'checklists', label: 'CHECKLISTS', icon: <ListChecks size={14}/>},
-              {id: 'maintenances', label: 'MAINTENANCES', icon: <Database size={14}/>},
               {id: 'qrs', label: 'QR CODES', icon: <QrCode size={14}/>},
               {id: 'sites', label: 'CHANTIERS', icon: <MapPin size={14}/>},
             ].map((t) => (
@@ -723,46 +716,6 @@ export const ManagementPanel: React.FC<ManagementPanelProps> = ({ user }) => {
              </button>
           </div>
       )}
-
-      {activeTab === 'maintenances' && (
-        <div className="bg-white rounded-[32px] p-6 shadow-sm border border-border">
-            <h3 className="font-black text-sm uppercase tracking-widest mb-6 text-dark flex gap-2"><Database size={18} className="text-primary"/> Historique des Maintenances</h3>
-            <div className="space-y-4">
-                {maintenances.map(m => (
-                    <div key={m.id} className="p-4 border rounded-2xl flex flex-col md:flex-row gap-4 items-start md:items-center bg-gray-50/50">
-                        <div className="flex-1">
-                            <div className="flex items-center gap-2 mb-1">
-                                <span className="font-black text-sm text-dark">{m.equipmentNameSnapshot}</span>
-                                <span className="px-2 py-0.5 bg-primary/10 text-primary text-[10px] font-black rounded-full uppercase tracking-widest">
-                                    {TimeUtils.formatInTimezone(m.timestamp, user.timezone || 'UTC', { dateStyle: 'short', timeStyle: 'short' })}
-                                </span>
-                            </div>
-                            <div className="text-xs text-gray-500 font-medium mb-2">Opérateur: {m.userNameSnapshot} | Checklist: {m.checklistNameSnapshot}</div>
-                            {m.answers && Object.entries(m.answers).length > 0 && (
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mt-3 bg-white p-3 rounded-xl border">
-                                    {Object.entries(m.answers).map(([key, val]: any, i) => (
-                                        <div key={i} className="flex gap-2 text-[11px]">
-                                            <span className="font-bold text-gray-600 truncate flex-1">{checklists.find(c => c.items?.find((it:any) => it.id === key))?.items?.find((it:any) => it.id === key)?.label || 'Question'}:</span>
-                                            <span className="font-black text-dark truncate flex-1">{val.value !== undefined ? String(val.value) : 'N/A'}</span>
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
-                            {m.generalNote && (
-                                <div className="mt-2 text-xs italic text-gray-600 bg-amber-50 p-2 rounded border border-amber-100">
-                                    Note: {m.generalNote}
-                                </div>
-                            )}
-                        </div>
-                    </div>
-                ))}
-                {maintenances.length === 0 && (
-                    <div className="py-12 text-center text-gray-400 font-medium italic text-xs">
-                        Aucun historique de maintenance.
-                    </div>
-                )}
-            </div>
-        </div>
       )}
     </div>
   );
