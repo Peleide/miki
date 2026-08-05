@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import QRCode from 'react-qr-code';
 import { User, Equipment, Tenant, UserRole, WeeklySchedule, DaySchedule, Site, EquipmentType, CdilUnit, VisitSession, VisitEntry } from '../types';
 import { db } from '../services/db';
-import { Plus, QrCode, RefreshCw, Printer, X, Download, User as UserIcon, Cog, Box, Pencil, Search, Check, ListChecks, MapPin, KeyRound, Power, ClipboardList, Droplets, Loader2 } from 'lucide-react';
+import { Plus, QrCode, RefreshCw, Printer, X, Download, User as UserIcon, Box, Pencil, Search, Check, ListChecks, MapPin, KeyRound, Power, ClipboardList, Droplets, Loader2 } from 'lucide-react';
 import { Logo } from './Logo';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
@@ -21,7 +21,7 @@ export const ManagementPanel: React.FC<ManagementPanelProps> = ({ user }) => {
   const [tenant, setTenant] = useState<Tenant | undefined>(undefined);
   const [equipmentTypes, setEquipmentTypes] = useState<EquipmentType[]>([]);
   
-  const [activeTab, setActiveTab] = useState<'equipments' | 'users' | 'qrs' | 'checklists' | 'sites' | 'settings' | 'centrales'>('equipments');
+  const [activeTab, setActiveTab] = useState<'equipments' | 'users' | 'qrs' | 'checklists' | 'sites' | 'centrales'>('equipments');
   const [loading, setLoading] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
   const [isPrintMode, setIsPrintMode] = useState(false);
