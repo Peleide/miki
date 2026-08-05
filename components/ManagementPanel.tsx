@@ -293,9 +293,10 @@ export const ManagementPanel: React.FC<ManagementPanelProps> = ({ user }) => {
   };
 
   const exportCdilSessionCsv = (session: VisitSession) => {
-    const headers = ['Date', 'Technicien', 'Localisation', 'Service', 'N° Série', 'Buse', 'Crépine', 'Ligne aspiration', 'Remarques'];
+    const typeLabel = session.sessionType === 'INTERVENTION' ? 'Intervention inopinée' : 'Visite périodique';
+    const headers = ['Date', 'Type de visite', 'Technicien', 'Localisation', 'Service', 'N° Série', 'Buse', 'Crépine', 'Ligne aspiration', 'Remarques'];
     const rows = session.entries.map((e: VisitEntry) => [
-      session.date, session.technicianName, e.location, e.service,
+      session.date, typeLabel, session.technicianName, e.location, e.service,
       e.serialNumber, String(e.buse), String(e.crepine), String(e.ligne), e.remarks || '',
     ]);
     const csv = [headers, ...rows].map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(';')).join('\n');
