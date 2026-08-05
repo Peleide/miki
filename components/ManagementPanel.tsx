@@ -1,30 +1,36 @@
 import React, { useState, useEffect } from 'react';
 import QRCode from 'react-qr-code';
-import { User, Equipment, Tenant, UserRole, WeeklySchedule, DaySchedule, Site } from '../types';
+import { User, Equipment, Tenant, UserRole, WeeklySchedule, DaySchedule, Site, EquipmentType, CdilUnit, VisitSession, VisitEntry } from '../types';
 import { db } from '../services/db';
-import { Plus, QrCode, RefreshCw, Printer, X, Download, User as UserIcon, Cog, Box, Database, Search, Check, ListChecks, MapPin } from 'lucide-react';
+import { Plus, QrCode, RefreshCw, Printer, X, Download, User as UserIcon, Cog, Box, Database, Search, Check, ListChecks, MapPin, KeyRound, Power, ClipboardList, Droplets, Loader2 } from 'lucide-react';
 import { Logo } from './Logo';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
+import { useDialog } from '../hooks/useDialog';
 
 interface ManagementPanelProps {
   user: User;
 }
 
 export const ManagementPanel: React.FC<ManagementPanelProps> = ({ user }) => {
+  const { confirm, toast, dialogNode } = useDialog();
   const [equipments, setEquipments] = useState<Equipment[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [checklists, setChecklists] = useState<any[]>([]);
   const [sites, setSites] = useState<Site[]>([]);
   const [tenant, setTenant] = useState<Tenant | undefined>(undefined);
+  const [equipmentTypes, setEquipmentTypes] = useState<EquipmentType[]>([]);
   
-  const [activeTab, setActiveTab] = useState<'equipments' | 'users' | 'qrs' | 'checklists' | 'sites' | 'settings'>('equipments');
+  const [activeTab, setActiveTab] = useState<'equipments' | 'users' | 'qrs' | 'checklists' | 'sites' | 'settings' | 'centrales'>('equipments');
   const [loading, setLoading] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
   const [isPrintMode, setIsPrintMode] = useState(false);
   
   // Create / Edit Equipment
   const [eqName, setEqName] = useState('');
+  const [eqCategory, setEqCategory] = useState('');
+  const [eqCategoryCode, setEqCategoryCode] = useState('');
+  const [eqStorageLocation, setEqStorageLocation] = useState('');
   const [eqType, setEqType] = useState('');
   const [eqSubType, setEqSubType] = useState('');
   const [eqBrand, setEqBrand] = useState('');
@@ -34,6 +40,10 @@ export const ManagementPanel: React.FC<ManagementPanelProps> = ({ user }) => {
   const [eqIsBatch, setEqIsBatch] = useState(false);
   const [eqBatchQty, setEqBatchQty] = useState(1);
   const [eqInstructions, setEqInstructions] = useState('');
+  // New type management
+  const [showAddType, setShowAddType] = useState(false);
+  const [newTypeName, setNewTypeName] = useState('');
+  const [newTypeCode, setNewTypeCode] = useState('');
   
   const [eqCreateMultiple, setEqCreateMultiple] = useState(false);
   const [eqCreateMultipleQty, setEqCreateMultipleQty] = useState(1);
@@ -55,6 +65,18 @@ export const ManagementPanel: React.FC<ManagementPanelProps> = ({ user }) => {
   const [newUserEmail, setNewUserEmail] = useState('');
   const [newUserRole, setNewUserRole] = useState<UserRole>(UserRole.AGENT);
   const [createdUser, setCreatedUser] = useState<User | null>(null);
+  const [userActionLoading, setUserActionLoading] = useState<string | null>(null);
+  const [resetPwdResult, setResetPwdResult] = useState<{ userId: string; tempPassword: string } | null>(null);
+
+  // CDil Units
+  const [cdilUnits, setCdilUnits] = useState<CdilUnit[]>([]);
+  const [cdilSessions, setCdilSessions] = useState<VisitSession[]>([]);
+  const [cdilLoading, setCdilLoading] = useState(false);
+  const [cdilSerial, setCdilSerial] = useState('');
+  const [cdilLocation, setCdilLocation] = useState('');
+  const [cdilService, setCdilService] = useState('');
+  const [cdilRoomCode, setCdilRoomCode] = useState('');
+  const [cdilNotes, setCdilNotes] = useState('');
 
   // Checklists
   const [chkName, setChkName] = useState('');
@@ -72,18 +94,20 @@ export const ManagementPanel: React.FC<ManagementPanelProps> = ({ user }) => {
   const refreshData = async () => {
     setLoading(true);
     try {
-        const [eqs, usrs, tnt, chks, sts] = await Promise.all([
+        const [eqs, usrs, tnt, chks, sts, types] = await Promise.all([
             db.getEquipments(user.tenantId, showArchived),
             db.getUsers(user.tenantId, true),
             db.getTenant(user.tenantId),
             db.getChecklists(user.tenantId, showArchived),
-            db.getSites(user.tenantId, showArchived)
+            db.getSites(user.tenantId, showArchived),
+            db.getEquipmentTypes(user.tenantId),
         ]);
         setEquipments((eqs as any).filter((e: any) => showArchived ? true : !e.isArchived));
-        setUsers(usrs); 
+        setUsers(usrs);
         setTenant(tnt);
         setChecklists((chks as any).filter((c: any) => showArchived ? true : !c.isArchived));
         setSites((sts as any).filter((s: any) => showArchived ? true : s.status !== 'ARCHIVED'));
+        setEquipmentTypes(types);
     } catch(e) {
         console.error(e);
     } finally {
@@ -93,13 +117,16 @@ export const ManagementPanel: React.FC<ManagementPanelProps> = ({ user }) => {
 
   const handleSaveEquipment = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!eqName || !eqBrand) return;
+    if (!editingEq && (!eqCategoryCode || !eqStorageLocation)) return;
+    if (editingEq && !eqName) return;
     setLoading(true);
     try {
         if (editingEq) {
             await db.updateEquipment(editingEq.id, {
-                name: eqName, type: eqType, subType: eqSubType, brand: eqBrand, 
-                model: eqModel, serialNumber: eqSerialNumber, uniqueId: eqUniqueId, 
+                name: eqName, category: eqCategory, categoryCode: eqCategoryCode,
+                storageLocation: eqStorageLocation,
+                type: eqCategory || eqType, subType: eqSubType, brand: eqBrand,
+                model: eqModel, serialNumber: eqSerialNumber, uniqueId: eqUniqueId,
                 isBatch: eqIsBatch, batchQuantity: eqIsBatch ? eqBatchQty : undefined,
                 instructions: eqInstructions,
                 usageCountBeforeMaintenance: eqUsageLimit !== '' ? Number(eqUsageLimit) : null as any,
@@ -108,21 +135,21 @@ export const ManagementPanel: React.FC<ManagementPanelProps> = ({ user }) => {
             }, user);
         } else {
             const baseEq = {
-                name: eqName, type: eqType, subType: eqSubType, brand: eqBrand, 
-                model: eqModel, serialNumber: eqSerialNumber, uniqueId: eqUniqueId, 
+                category: eqCategory, categoryCode: eqCategoryCode,
+                storageLocation: eqStorageLocation,
+                type: eqCategory || eqType, subType: eqSubType, brand: eqBrand,
+                model: eqModel, serialNumber: eqSerialNumber, uniqueId: eqUniqueId,
                 isBatch: eqIsBatch, batchQuantity: eqIsBatch ? eqBatchQty : undefined,
                 instructions: eqInstructions,
                 usageCountBeforeMaintenance: eqUsageLimit !== '' ? Number(eqUsageLimit) : undefined,
                 maintenanceIntervalDays: eqMaintDays !== '' ? Number(eqMaintDays) : undefined,
                 nextMaintenanceDate: eqMaintDays !== '' ? new Date(Date.now() + Number(eqMaintDays)*86400000).toISOString() : undefined,
                 isKit: eqIsKit, childEquipmentIds: eqIsKit ? eqChildIds : [],
-                status: 'AVAILABLE' as const, usageCount: 0, isArchived: false
+                status: 'AVAILABLE' as const, usageCount: 0, isArchived: false,
+                name: '', // server will generate
             };
             if (eqCreateMultiple && eqCreateMultipleQty > 1) {
-                const items = [];
-                for (let i = 0; i < eqCreateMultipleQty; i++) {
-                    items.push({ ...baseEq, name: `${eqName} (${i + 1})` });
-                }
+                const items = Array.from({ length: eqCreateMultipleQty }, () => ({ ...baseEq }));
                 await db.createEquipmentBatch(user.tenantId, items);
             } else {
                 await db.createEquipment(user.tenantId, baseEq);
@@ -131,14 +158,31 @@ export const ManagementPanel: React.FC<ManagementPanelProps> = ({ user }) => {
         resetEqForm();
         await refreshData();
     } catch(e) {
-        alert("Erreur lors de l'enregistrement de l'équipement");
+        toast("Erreur lors de l'enregistrement de l'équipement");
+    } finally {
+        setLoading(false);
+    }
+  };
+
+  const handleAddEquipmentType = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newTypeName || !newTypeCode) return;
+    setLoading(true);
+    try {
+        await db.manageEquipmentType('CREATE', user.tenantId, { name: newTypeName, code: newTypeCode });
+        setNewTypeName(''); setNewTypeCode(''); setShowAddType(false);
+        const types = await db.getEquipmentTypes(user.tenantId);
+        setEquipmentTypes(types);
+    } catch(e) {
+        toast("Erreur lors de l'ajout du type");
     } finally {
         setLoading(false);
     }
   };
 
   const resetEqForm = () => {
-      setEqName(''); setEqType(''); setEqSubType(''); setEqBrand(''); setEqModel(''); 
+      setEqName(''); setEqCategory(''); setEqCategoryCode(''); setEqStorageLocation('');
+      setEqType(''); setEqSubType(''); setEqBrand(''); setEqModel('');
       setEqSerialNumber(''); setEqUniqueId(''); setEqIsBatch(false); setEqBatchQty(1); setEqInstructions('');
       setEqCreateMultiple(false); setEqCreateMultipleQty(1);
       setEqUsageLimit(''); setEqMaintDays(''); setEqIsKit(false); setEqChildIds([]);
@@ -147,8 +191,12 @@ export const ManagementPanel: React.FC<ManagementPanelProps> = ({ user }) => {
 
   const editEquipment = (eq: Equipment) => {
       setEditingEq(eq);
-      setEqName(eq.name); setEqType(eq.type || ''); setEqSubType(eq.subType || '');
-      setEqBrand(eq.brand || ''); setEqModel(eq.model || ''); 
+      setEqName(eq.name);
+      setEqCategory(eq.category || eq.type || '');
+      setEqCategoryCode(eq.categoryCode || '');
+      setEqStorageLocation(eq.storageLocation || '');
+      setEqType(eq.type || ''); setEqSubType(eq.subType || '');
+      setEqBrand(eq.brand || ''); setEqModel(eq.model || '');
       setEqSerialNumber(eq.serialNumber || ''); setEqUniqueId(eq.uniqueId || '');
       setEqIsBatch(eq.isBatch || false); setEqBatchQty(eq.batchQuantity || 1);
       setEqInstructions(eq.instructions || '');
@@ -167,10 +215,95 @@ export const ManagementPanel: React.FC<ManagementPanelProps> = ({ user }) => {
         setNewUserFn(''); setNewUserLn(''); setNewUserEmail('');
         await refreshData();
     } catch (e: any) {
-        alert(e.message || "Erreur de création utilisateur");
+        toast(e.message || "Erreur de création utilisateur");
     } finally {
         setLoading(false);
     }
+  };
+
+  const handleResetUserPwd = async (targetUserId: string) => {
+    const ok = await confirm({ title: 'Réinitialiser le mot de passe', message: "Un nouveau mot de passe provisoire sera généré. L'utilisateur devra le changer à sa prochaine connexion.", confirmLabel: 'Réinitialiser', variant: 'warning' });
+    if (!ok) return;
+    setUserActionLoading(targetUserId);
+    try {
+        const result = await db.managerResetPassword(targetUserId, user);
+        if (result.tempPassword) setResetPwdResult({ userId: targetUserId, tempPassword: result.tempPassword });
+    } catch (e: any) {
+        toast(e.message || 'Erreur lors de la réinitialisation');
+    } finally {
+        setUserActionLoading(null);
+    }
+  };
+
+  const handleToggleDisable = async (u: User) => {
+    const action = u.isDisabled ? 'réactiver' : 'désactiver';
+    const ok = await confirm({ title: u.isDisabled ? 'Réactiver ce compte' : 'Désactiver ce compte', message: `Voulez-vous ${action} ${u.firstName} ${u.lastName} ?`, confirmLabel: u.isDisabled ? 'Réactiver' : 'Désactiver', variant: u.isDisabled ? 'default' : 'danger' });
+    if (!ok) return;
+    setUserActionLoading(u.id);
+    try {
+        await db.managerUpdateUser(user.tenantId, u.id, { isDisabled: !u.isDisabled }, user);
+        await refreshData();
+    } catch (e: any) {
+        toast(e.message || 'Erreur lors de la modification');
+    } finally {
+        setUserActionLoading(null);
+    }
+  };
+
+  // CDil handlers
+  const refreshCdilData = async () => {
+    setCdilLoading(true);
+    try {
+      const [units, sessions] = await Promise.all([
+        db.getCdilUnits(user.tenantId),
+        db.getVisitSessions(user.tenantId, 'CDIL'),
+      ]);
+      setCdilUnits(units);
+      setCdilSessions(sessions);
+    } catch (e) { console.error(e); }
+    finally { setCdilLoading(false); }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'centrales') refreshCdilData();
+  }, [activeTab, user.tenantId]);
+
+  const handleCreateCdilUnit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!cdilSerial || !cdilLocation || !cdilService) return;
+    setCdilLoading(true);
+    try {
+      await db.createCdilUnit(user.tenantId, {
+        serialNumber: cdilSerial, location: cdilLocation,
+        service: cdilService, roomCode: cdilRoomCode, notes: cdilNotes,
+      });
+      setCdilSerial(''); setCdilLocation(''); setCdilService(''); setCdilRoomCode(''); setCdilNotes('');
+      await refreshCdilData();
+    } catch (e: any) { toast(e.message || 'Erreur'); }
+    finally { setCdilLoading(false); }
+  };
+
+  const handleDeactivateCdilUnit = async (id: string) => {
+    const ok = await confirm({ title: 'Désactiver cette unité', message: 'Cette unité ne sera plus incluse dans les prochaines visites.', confirmLabel: 'Désactiver', variant: 'danger' });
+    if (!ok) return;
+    try {
+      await db.deactivateCdilUnit(user.tenantId, id);
+      await refreshCdilData();
+    } catch (e: any) { toast(e.message || 'Erreur'); }
+  };
+
+  const exportCdilSessionCsv = (session: VisitSession) => {
+    const headers = ['Date', 'Technicien', 'Localisation', 'Service', 'N° Série', 'Buse', 'Crépine', 'Ligne aspiration', 'Remarques'];
+    const rows = session.entries.map((e: VisitEntry) => [
+      session.date, session.technicianName, e.location, e.service,
+      e.serialNumber, String(e.buse), String(e.crepine), String(e.ligne), e.remarks || '',
+    ]);
+    const csv = [headers, ...rows].map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(';')).join('\n');
+    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `CDil_${session.title.replace(/\s+/g, '_')}.csv`; a.click();
+    URL.revokeObjectURL(url);
   };
 
   const resetSiteForm = () => { setSiteName(''); setSiteAddress(''); setEditingSite(null); };
@@ -190,7 +323,8 @@ export const ManagementPanel: React.FC<ManagementPanelProps> = ({ user }) => {
   };
   
   const archiveSite = async (id: string) => {
-      if(!confirm("Archiver ce chantier ?")) return;
+      const ok = await confirm({ title: 'Archiver ce chantier', message: 'Ce chantier sera archivé et ne sera plus visible par défaut.', confirmLabel: 'Archiver', variant: 'danger' });
+      if (!ok) return;
       await db.archiveSite(user.tenantId, id);
       await refreshData();
   };
@@ -201,10 +335,11 @@ export const ManagementPanel: React.FC<ManagementPanelProps> = ({ user }) => {
   };
 
   const checkArchiveEq = async (id: string) => {
-      if(!confirm("Archiver cet équipement ?")) return;
+      const ok = await confirm({ title: 'Archiver cet équipement', message: 'Cet équipement sera archivé. Son historique sera conservé.', confirmLabel: 'Archiver', variant: 'danger' });
+      if (!ok) return;
       setLoading(true);
       try {
-          await db.deleteEquipment(id, user); 
+          await db.deleteEquipment(id, user);
           await refreshData();
       } catch(e) {
       } finally {
@@ -219,7 +354,7 @@ export const ManagementPanel: React.FC<ManagementPanelProps> = ({ user }) => {
   const handleSaveChecklist = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!chkName || chkItems.length === 0) {
-        alert("Un nom et au moins une étape sont requis.");
+        toast("Un nom et au moins une étape sont requis.");
         return;
     }
     setLoading(true);
@@ -239,7 +374,7 @@ export const ManagementPanel: React.FC<ManagementPanelProps> = ({ user }) => {
         resetChkForm();
         await refreshData();
     } catch(e) {
-        alert("Erreur lors de l'enregistrement de la checklist");
+        toast("Erreur lors de l'enregistrement de la checklist");
     } finally {
         setLoading(false);
     }
@@ -252,7 +387,8 @@ export const ManagementPanel: React.FC<ManagementPanelProps> = ({ user }) => {
   };
 
   const checkArchiveChk = async (id: string) => {
-    if(!confirm("Archiver cette checklist ?")) return;
+    const ok = await confirm({ title: 'Archiver cette checklist', message: 'Cette checklist ne sera plus proposée lors des opérations.', confirmLabel: 'Archiver', variant: 'danger' });
+    if (!ok) return;
     setLoading(true);
     try {
         await db.archiveChecklist(user.tenantId, id);
@@ -341,6 +477,7 @@ export const ManagementPanel: React.FC<ManagementPanelProps> = ({ user }) => {
               {id: 'checklists', label: 'CHECKLISTS', icon: <ListChecks size={14}/>},
               {id: 'qrs', label: 'QR CODES', icon: <QrCode size={14}/>},
               {id: 'sites', label: 'CHANTIERS', icon: <MapPin size={14}/>},
+              {id: 'centrales', label: 'CENTRALES', icon: <Droplets size={14}/>},
             ].map((t) => (
               <button 
                 key={t.id} 
@@ -364,12 +501,58 @@ export const ManagementPanel: React.FC<ManagementPanelProps> = ({ user }) => {
             <div className="lg:col-span-1 border rounded-[32px] bg-white p-8">
                 <h3 className="font-black text-sm uppercase tracking-widest mb-6 text-dark flex gap-2"><Plus size={18} className="text-primary"/> {editingEq ? 'Modifier' : 'Ajouter'}</h3>
                 <form onSubmit={handleSaveEquipment} className="space-y-4">
-                    <input required placeholder="Nom (Ex: Perceuse #1)" value={eqName} onChange={e=>setEqName(e.target.value)} className="w-full p-4 bg-gray-50 border rounded-2xl text-xs font-bold focus:border-primary focus:outline-none"/>
-                    <input required placeholder="Marque (Ex: Makita)" value={eqBrand} onChange={e=>setEqBrand(e.target.value)} className="w-full p-4 bg-gray-50 border rounded-2xl text-xs font-bold"/>
+                    {/* Catégorie */}
+                    <div>
+                        <select
+                            required={!editingEq}
+                            value={eqCategoryCode}
+                            onChange={e => {
+                                const t = equipmentTypes.find(t => t.code === e.target.value);
+                                setEqCategoryCode(e.target.value);
+                                setEqCategory(t?.name || '');
+                            }}
+                            className="w-full p-4 bg-gray-50 border rounded-2xl text-xs font-bold focus:border-primary focus:outline-none"
+                        >
+                            <option value="">Catégorie *</option>
+                            {equipmentTypes.map(t => <option key={t.id} value={t.code}>{t.name} ({t.code})</option>)}
+                        </select>
+                        <button type="button" onClick={() => setShowAddType(!showAddType)} className="mt-1 text-[10px] font-black text-primary/60 hover:text-primary uppercase tracking-widest">
+                            {showAddType ? '– Annuler' : '+ Ajouter un type'}
+                        </button>
+                    </div>
+
+                    {/* Ajout d'un type personnalisé */}
+                    {showAddType && (
+                        <form onSubmit={handleAddEquipmentType} className="p-4 border-2 border-dashed border-primary/30 rounded-2xl bg-primary/5 space-y-3">
+                            <p className="text-[10px] font-black uppercase tracking-widest text-primary">Nouveau type</p>
+                            <input required placeholder="Nom (ex: Aspirateur)" value={newTypeName} onChange={e=>setNewTypeName(e.target.value)} className="w-full p-3 bg-white border rounded-xl text-xs font-bold focus:border-primary focus:outline-none"/>
+                            <input required placeholder="Code court (ex: Asp)" value={newTypeCode} onChange={e=>setNewTypeCode(e.target.value)} className="w-full p-3 bg-white border rounded-xl text-xs font-bold focus:border-primary focus:outline-none"/>
+                            <button type="submit" disabled={loading} className="w-full py-3 bg-primary text-white rounded-xl text-[10px] font-black uppercase tracking-widest">Créer</button>
+                        </form>
+                    )}
+
+                    {/* Local de stockage */}
+                    <input required={!editingEq} placeholder="Local de stockage * (ex: Dépôt A)" value={eqStorageLocation} onChange={e=>setEqStorageLocation(e.target.value)} className="w-full p-4 bg-gray-50 border rounded-2xl text-xs font-bold focus:border-primary focus:outline-none"/>
+
+                    {/* Nomenclature preview */}
+                    {!editingEq && eqCategoryCode && eqStorageLocation && (
+                        <div className="px-4 py-3 bg-primary/5 border border-primary/20 rounded-2xl">
+                            <p className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-1">Nom auto-généré</p>
+                            <p className="text-sm font-black text-primary">{eqCategoryCode}___{new Date().toISOString().slice(0,7).replace('-','')}_{eqStorageLocation}</p>
+                            <p className="text-[9px] text-gray-400 mt-1">Le numéro de séquence sera attribué par le serveur.</p>
+                        </div>
+                    )}
+
+                    {/* Nom (édition uniquement) */}
+                    {editingEq && (
+                        <input required placeholder="Nom" value={eqName} onChange={e=>setEqName(e.target.value)} className="w-full p-4 bg-gray-50 border rounded-2xl text-xs font-bold focus:border-primary focus:outline-none"/>
+                    )}
+
+                    <input placeholder="Marque (ex: Tennant)" value={eqBrand} onChange={e=>setEqBrand(e.target.value)} className="w-full p-4 bg-gray-50 border rounded-2xl text-xs font-bold"/>
                     <input placeholder="Modèle" value={eqModel} onChange={e=>setEqModel(e.target.value)} className="w-full p-4 bg-gray-50 border rounded-2xl text-xs font-bold"/>
                     <div className="flex gap-2">
                         <input placeholder="Numéro de série" value={eqSerialNumber} onChange={e=>setEqSerialNumber(e.target.value)} className="w-full p-4 bg-gray-50 border rounded-2xl text-xs font-bold"/>
-                        <input placeholder="ID Unique / Interne" value={eqUniqueId} onChange={e=>setEqUniqueId(e.target.value)} className="w-full p-4 bg-gray-50 border rounded-2xl text-xs font-bold"/>
+                        <input placeholder="N° de référence" value={eqUniqueId} onChange={e=>setEqUniqueId(e.target.value)} className="w-full p-4 bg-gray-50 border rounded-2xl text-xs font-bold"/>
                     </div>
                     
                     {!editingEq && !eqIsBatch && (
@@ -687,18 +870,51 @@ export const ManagementPanel: React.FC<ManagementPanelProps> = ({ user }) => {
                          <button onClick={() => setCreatedUser(null)} className="w-full mt-4 bg-white text-success py-3 rounded-xl font-black text-[10px] uppercase">Fermer</button>
                      </div>
                  )}
+                 {resetPwdResult && (
+                     <div className="bg-primary text-white p-6 rounded-[24px] mb-6 shadow-2xl animate-in zoom-in-95">
+                         <h4 className="font-black uppercase tracking-widest text-xs mb-2 flex items-center gap-2"><KeyRound size={16}/> Mot de passe provisoire</h4>
+                         <p className="font-medium text-sm mb-4">Communiquez ce mot de passe à l'utilisateur. Il devra le changer à la prochaine connexion.</p>
+                         <div className="bg-black/20 p-4 rounded-xl font-mono text-center text-lg tracking-widest">{resetPwdResult.tempPassword}</div>
+                         <button onClick={() => setResetPwdResult(null)} className="w-full mt-4 bg-white text-primary py-3 rounded-xl font-black text-[10px] uppercase">Fermer</button>
+                     </div>
+                 )}
                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                      {users.filter(u => showArchived ? true : !u.isArchived).map(u => (
-                         <div key={u.id} className={`bg-white border rounded-[24px] p-6 shadow-sm ${u.isArchived ? 'opacity-50' : ''}`}>
-                             <div className="flex justify-between items-start">
+                         <div key={u.id} className={`bg-white border rounded-[24px] p-6 shadow-sm ${u.isArchived ? 'opacity-50 grayscale' : ''} ${u.isDisabled ? 'border-orange-200' : ''}`}>
+                             <div className="flex justify-between items-start mb-4">
                                  <div>
                                      <div className="font-black text-dark text-lg capitalize">{u.firstName} {u.lastName}</div>
                                      <div className="text-gray-400 font-medium text-xs mb-2">{u.email}</div>
-                                     <span className="bg-gray-100 text-gray-500 px-3 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest">
-                                         {u.tenantsAccess?.[user.tenantId] || u.role}
-                                     </span>
+                                     <div className="flex gap-2 flex-wrap">
+                                         <span className="bg-gray-100 text-gray-500 px-3 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest">
+                                             {u.tenantsAccess?.[user.tenantId] || u.role}
+                                         </span>
+                                         {u.isDisabled && (
+                                             <span className="bg-orange-100 text-orange-600 px-3 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest">Désactivé</span>
+                                         )}
+                                     </div>
                                  </div>
                              </div>
+                             {!u.isArchived && (
+                                 <div className="flex justify-end gap-2 pt-4 border-t border-border">
+                                     <button
+                                         onClick={() => handleResetUserPwd(u.id)}
+                                         disabled={userActionLoading === u.id}
+                                         title="Réinitialiser le mot de passe"
+                                         className="text-primary hover:bg-primary/10 p-2 rounded-xl transition-all disabled:opacity-40"
+                                     >
+                                         {userActionLoading === u.id ? <RefreshCw size={16} className="animate-spin"/> : <KeyRound size={16}/>}
+                                     </button>
+                                     <button
+                                         onClick={() => handleToggleDisable(u)}
+                                         disabled={userActionLoading === u.id}
+                                         title={u.isDisabled ? 'Réactiver' : 'Désactiver'}
+                                         className={`p-2 rounded-xl transition-all disabled:opacity-40 ${u.isDisabled ? 'text-success hover:bg-success/10' : 'text-danger hover:bg-red-50'}`}
+                                     >
+                                         <Power size={16}/>
+                                     </button>
+                                 </div>
+                             )}
                          </div>
                      ))}
                  </div>
@@ -716,6 +932,112 @@ export const ManagementPanel: React.FC<ManagementPanelProps> = ({ user }) => {
              </button>
           </div>
       )}
+
+      {activeTab === 'centrales' && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          {/* Formulaire ajout unité */}
+          <div className="lg:col-span-1 border rounded-[32px] bg-white p-8">
+            <h3 className="font-black text-sm uppercase tracking-widest mb-6 text-dark flex gap-2"><Plus size={18} className="text-primary"/> Ajouter une Unité CDil</h3>
+            <form onSubmit={handleCreateCdilUnit} className="space-y-4">
+              <input required placeholder="N° de série (ex: 4839)" value={cdilSerial} onChange={e=>setCdilSerial(e.target.value)} className="w-full p-4 bg-gray-50 border rounded-2xl text-xs font-bold outline-none focus:border-primary"/>
+              <input required placeholder="Localisation complète (ex: Oncologie B26)" value={cdilLocation} onChange={e=>setCdilLocation(e.target.value)} className="w-full p-4 bg-gray-50 border rounded-2xl text-xs font-bold outline-none focus:border-primary"/>
+              <div className="grid grid-cols-2 gap-3">
+                <input required placeholder="Service (ex: Oncologie)" value={cdilService} onChange={e=>setCdilService(e.target.value)} className="w-full p-4 bg-gray-50 border rounded-2xl text-xs font-bold outline-none focus:border-primary"/>
+                <input placeholder="Code salle (ex: B26)" value={cdilRoomCode} onChange={e=>setCdilRoomCode(e.target.value)} className="w-full p-4 bg-gray-50 border rounded-2xl text-xs font-bold outline-none focus:border-primary"/>
+              </div>
+              <textarea placeholder="Notes..." value={cdilNotes} onChange={e=>setCdilNotes(e.target.value)} className="w-full p-4 bg-gray-50 border rounded-2xl text-xs font-bold outline-none focus:border-primary resize-none h-20"/>
+              <button type="submit" disabled={cdilLoading} className="w-full py-4 bg-primary text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-xl disabled:opacity-50">
+                {cdilLoading ? 'Enregistrement...' : 'Ajouter l\'unité'}
+              </button>
+            </form>
+          </div>
+
+          {/* Liste unités + historique sessions */}
+          <div className="lg:col-span-2 space-y-8">
+            {/* Unités actives */}
+            <div>
+              <h3 className="font-black text-sm uppercase tracking-widest text-dark mb-4 flex items-center gap-2">
+                <Droplets size={16} className="text-primary"/> Unités CDil ({cdilUnits.length})
+              </h3>
+              {cdilLoading ? (
+                <div className="flex justify-center py-10"><Loader2 size={28} className="animate-spin text-primary"/></div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {cdilUnits.map(unit => (
+                    <div key={unit.id} className="bg-white border rounded-[24px] p-5 shadow-sm flex flex-col justify-between">
+                      <div>
+                        <div className="flex justify-between items-start mb-2">
+                          <div className="font-black text-dark text-base leading-none">{unit.location}</div>
+                          {unit.currentState && (
+                            <div className="flex gap-1">
+                              {(['buse','crepine','ligne'] as const).map(k => (
+                                <span key={k} className={`text-[9px] font-black px-1.5 py-0.5 rounded-md border ${unit.currentState![k] === 'ok' ? 'bg-success/10 text-success border-success/20' : unit.currentState![k] === 1 ? 'bg-orange-50 text-orange-600 border-orange-200' : 'bg-red-50 text-red-600 border-red-200'}`}>
+                                  {k === 'buse' ? 'B' : k === 'crepine' ? 'C' : 'L'}:{String(unit.currentState![k])}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                        <div className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">ID: {unit.serialNumber}</div>
+                        <div className="text-[10px] font-bold text-gray-400">{unit.service}</div>
+                        {unit.lastVisitDate && (
+                          <div className="text-[10px] font-bold text-gray-300 mt-1">Dernière visite: {new Date(unit.lastVisitDate).toLocaleDateString('fr-FR')}</div>
+                        )}
+                      </div>
+                      <div className="flex justify-end pt-3 mt-3 border-t border-border">
+                        <button onClick={() => handleDeactivateCdilUnit(unit.id)} className="text-danger hover:bg-red-50 p-2 rounded-xl transition-all" title="Désactiver">
+                          <X size={16}/>
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                  {cdilUnits.length === 0 && (
+                    <div className="col-span-full py-16 bg-gray-50 border-2 border-dashed border-gray-200 rounded-[32px] text-center">
+                      <Droplets size={40} className="mx-auto text-gray-300 mb-3 opacity-50"/>
+                      <p className="text-gray-400 font-bold uppercase tracking-widest text-xs">Aucune unité CDil configurée</p>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Historique des visites */}
+            <div>
+              <h3 className="font-black text-sm uppercase tracking-widest text-dark mb-4 flex items-center gap-2">
+                <ClipboardList size={16} className="text-primary"/> Historique des Visites
+              </h3>
+              <div className="space-y-3">
+                {cdilSessions.filter(s => s.status === 'COMPLETED').map(session => (
+                  <div key={session.id} className="bg-white border rounded-[24px] p-5 shadow-sm flex items-center justify-between gap-4">
+                    <div className="min-w-0">
+                      <div className="font-black text-dark text-sm truncate">{session.title}</div>
+                      <div className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-0.5">
+                        {new Date(session.date).toLocaleDateString('fr-FR', { day:'2-digit', month:'long', year:'numeric' })}
+                        {' · '}{session.technicianName}
+                        {' · '}{session.entries.length} unité{session.entries.length > 1 ? 's' : ''}
+                      </div>
+                    </div>
+                    <button onClick={() => exportCdilSessionCsv(session)} className="shrink-0 flex items-center gap-2 px-5 py-2.5 bg-gray-100 hover:bg-primary hover:text-white text-dark rounded-xl text-[10px] font-black uppercase tracking-widest transition-all">
+                      <Download size={13}/> CSV
+                    </button>
+                  </div>
+                ))}
+                {cdilSessions.filter(s => s.status === 'DRAFT').length > 0 && (
+                  <div className="text-[10px] font-bold text-gray-400 uppercase tracking-widest text-center py-2">
+                    {cdilSessions.filter(s => s.status === 'DRAFT').length} visite(s) en cours — accessible depuis l'onglet VISITES
+                  </div>
+                )}
+                {cdilSessions.length === 0 && !cdilLoading && (
+                  <div className="py-10 bg-gray-50 border-2 border-dashed border-gray-200 rounded-[32px] text-center">
+                    <p className="text-gray-400 font-bold uppercase tracking-widest text-xs">Aucune visite clôturée</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      {dialogNode}
     </div>
   );
 };

@@ -1,4 +1,4 @@
-import { User, UserRole, Equipment, EquipmentLog, Tenant, EquipmentLogAction, AuditLog, IncidentReport, AppNotification, Site } from '../types';
+import { User, UserRole, Equipment, EquipmentLog, Tenant, EquipmentLogAction, AuditLog, IncidentReport, AppNotification, Site, EquipmentType, DEFAULT_EQUIPMENT_TYPES, CdilUnit, VisitSession, VisitEntry, ComponentState } from '../types';
 import { dbFirestore, auth, functions } from './firebaseConfig';
 import { 
   collection, doc, getDoc, getDocs, query, where, orderBy, limit, Timestamp, onSnapshot, updateDoc 
@@ -124,8 +124,8 @@ class DatabaseService {
       return await this.call('submitReport', { action: 'ARCHIVE', tenantId, incidentReport: { id: reportId } });
   }
 
-  async updateReportStatus(tenantId: string, reportId: string, status: 'OPEN' | 'IN_PROGRESS' | 'RESOLVED' | 'ARCHIVED', assignedTo?: string | null) {
-      return await this.call('submitReport', { action: 'UPDATE_STATUS', tenantId, incidentReport: { id: reportId, status, assignedTo } });
+  async updateReportStatus(tenantId: string, reportId: string, status: 'OPEN' | 'IN_PROGRESS' | 'RESOLVED' | 'ARCHIVED', assignedTo?: string | null, resolutionNote?: string) {
+      return await this.call('submitReport', { action: 'UPDATE_STATUS', tenantId, incidentReport: { id: reportId, status, assignedTo, resolutionNote } });
   }
 
   // --- CHECKLISTS ---
@@ -345,6 +345,69 @@ class DatabaseService {
     }
   }
   
+  // --- CENTRALES DE DILUTION ---
+
+  async getCdilUnits(tenantId: string, includeInactive = false): Promise<CdilUnit[]> {
+    let q: any = collection(dbFirestore, 'tenants', tenantId, 'cdilUnits');
+    if (!includeInactive) q = query(q, where('isActive', '==', true));
+    q = query(q, orderBy('location'));
+    const snap = await getDocs(q);
+    return snap.docs.map(d => ({ id: d.id, ...(d.data() as any) } as CdilUnit));
+  }
+
+  async createCdilUnit(tenantId: string, payload: Omit<CdilUnit, 'id' | 'tenantId' | 'createdAt' | 'isActive'>) {
+    return await this.call('manageCdilUnit', { action: 'CREATE', tenantId, payload });
+  }
+
+  async updateCdilUnit(tenantId: string, id: string, updates: Partial<CdilUnit>) {
+    return await this.call('manageCdilUnit', { action: 'UPDATE', tenantId, payload: { id, ...updates } });
+  }
+
+  async deactivateCdilUnit(tenantId: string, id: string) {
+    return await this.call('manageCdilUnit', { action: 'DEACTIVATE', tenantId, payload: { id } });
+  }
+
+  // --- SESSIONS DE VISITE ---
+
+  async getVisitSessions(tenantId: string, type: 'CDIL' = 'CDIL'): Promise<VisitSession[]> {
+    const q = query(
+      collection(dbFirestore, 'tenants', tenantId, 'visitSessions'),
+      where('type', '==', type),
+      orderBy('date', 'desc'),
+      limit(50)
+    );
+    const snap = await getDocs(q);
+    return snap.docs.map(d => ({ id: d.id, ...d.data() } as VisitSession));
+  }
+
+  async getVisitSession(tenantId: string, sessionId: string): Promise<VisitSession | null> {
+    const snap = await getDoc(doc(dbFirestore, 'tenants', tenantId, 'visitSessions', sessionId));
+    if (!snap.exists()) return null;
+    return { id: snap.id, ...snap.data() } as VisitSession;
+  }
+
+  async createVisitSession(tenantId: string, payload: {
+    title?: string;
+    date?: string;
+    type?: 'CDIL';
+    sessionType?: 'PERIODIQUE' | 'INTERVENTION';
+    unitIds?: string[];
+  }) {
+    return await this.call('manageVisitSession', { action: 'CREATE', tenantId, payload }) as { id: string };
+  }
+
+  async saveVisitEntries(tenantId: string, sessionId: string, entries: VisitEntry[]) {
+    return await this.call('manageVisitSession', { action: 'SAVE_ENTRIES', tenantId, payload: { sessionId, entries } });
+  }
+
+  async completeVisitSession(tenantId: string, sessionId: string) {
+    return await this.call('manageVisitSession', { action: 'COMPLETE', tenantId, payload: { sessionId } });
+  }
+
+  async deleteDraftVisitSession(tenantId: string, sessionId: string) {
+    return await this.call('manageVisitSession', { action: 'DELETE_DRAFT', tenantId, payload: { sessionId } });
+  }
+
   async getTenantsForUser(user: User): Promise<Tenant[]> {
     const isGlobalAdmin = user.role === UserRole.ADMIN || user.tenantsAccess['platform'] === UserRole.ADMIN;
     if (isGlobalAdmin) return this.getAllTenants();
@@ -385,6 +448,20 @@ class DatabaseService {
   async getEquipments(tid: string, inc = false) { return this.fetchSub<Equipment>(tid, 'equipments', inc); }
   async getChecklists(tid: string, inc = false) { return this.fetchSub<any>(tid, 'checklists', inc); }
   async getSites(tid: string, inc = false) { return this.fetchSub<Site>(tid, 'sites', inc); }
+
+  async getEquipmentTypes(tid: string): Promise<EquipmentType[]> {
+    try {
+      const custom = await this.fetchSub<EquipmentType>(tid, 'equipmentTypes', false);
+      const defaults = DEFAULT_EQUIPMENT_TYPES.filter(d => !custom.some(c => c.code === d.code));
+      return [...defaults, ...custom];
+    } catch {
+      return [...DEFAULT_EQUIPMENT_TYPES];
+    }
+  }
+
+  async manageEquipmentType(action: string, tenantId: string, payload: any) {
+    return await this.call('manageEquipmentType', { action, tenantId, payload });
+  }
   async getTenant(tid: string) { const s = await getDoc(doc(dbFirestore, 'tenants', tid)); return s.exists() ? { id: s.id, ...s.data() } as Tenant : undefined; }
   async getAllTenants() { const s = await getDocs(collection(dbFirestore, 'tenants')); return s.docs.map(d => ({ id: d.id, ...d.data() })) as Tenant[]; }
   
@@ -430,7 +507,7 @@ class DatabaseService {
   }
 
   async getMaintenanceLogs(tid: string) {
-      const q = query(collection(dbFirestore, 'tenants', tid, 'maintenance_logs'), orderBy('timestamp', 'desc'));
+      const q = query(collection(dbFirestore, 'tenants', tid, 'maintenanceLogs'), orderBy('timestamp', 'desc'));
       const s = await getDocs(q);
       return s.docs.map(d => ({ id: d.id, ...d.data() })) as any[];
   }

@@ -3,6 +3,7 @@ import { User, Equipment, EquipmentLogAction, UserRole } from '../types';
 import { db } from '../services/db';
 import { CheckCircle, MapPin, LogIn, LogOut, AlertTriangle, X, Loader2, RefreshCw, Check, LayoutGrid, ChevronDown, Wrench, Package, Box } from 'lucide-react';
 import { Html5Qrcode } from 'html5-qrcode';
+import { useDialog } from '../hooks/useDialog';
 
 interface AgentViewProps {
   user: User;
@@ -12,6 +13,7 @@ interface AgentViewProps {
 }
 
 export const AgentView: React.FC<AgentViewProps> = ({ user, isOnline, onModeChange, onRefreshUser }) => {
+  const { toast, dialogNode } = useDialog();
   const savedMode = localStorage.getItem('miki_agent_mode') as 'scan' | 'list' | null;
   const [mode, setMode] = useState<'scan' | 'list'>(savedMode || 'list');
   
@@ -163,7 +165,7 @@ export const AgentView: React.FC<AgentViewProps> = ({ user, isOnline, onModeChan
 
     if (action === 'TAKE' && activeSessionEquipmentId && !selectedEq.isBatch) {
       const otherEq = equipments.find(r => r.id === activeSessionEquipmentId);
-      alert(`Vous utilisez déjà "${otherEq?.name || 'un autre équipement'}". Veuillez le restituer d'abord.`);
+      toast(`Vous utilisez déjà "${otherEq?.name || 'un autre équipement'}". Veuillez le restituer d'abord.`, 'info');
       return;
     }
 
@@ -206,8 +208,8 @@ export const AgentView: React.FC<AgentViewProps> = ({ user, isOnline, onModeChan
       setTimeout(() => setLastAction(null), 3000);
       closeModal();
       setActiveChecklist(null);
-    } catch (e: any) { 
-      alert(e.message || "Erreur lors de l'enregistrement."); 
+    } catch (e: any) {
+      toast(e.message || "Erreur lors de l'enregistrement.");
     } finally { 
       setLoading(false); 
     }
@@ -216,7 +218,7 @@ export const AgentView: React.FC<AgentViewProps> = ({ user, isOnline, onModeChan
   const handleSubmitChecklist = async () => {
       for (const item of activeChecklist.items) {
           if (item.required && (checklistAnswers[item.id]?.value === undefined || checklistAnswers[item.id]?.value === '')) {
-              alert(`Veuillez répondre à: ${item.label}`);
+              toast(`Veuillez répondre à : ${item.label}`, 'info');
               return;
           }
       }
@@ -262,7 +264,7 @@ export const AgentView: React.FC<AgentViewProps> = ({ user, isOnline, onModeChan
          setTimeout(() => setLastAction(null), 3000);
          closeModal();
      } catch (e) {
-         alert("Erreur envoi signalement.");
+         toast("Erreur lors de l'envoi du signalement.");
      } finally {
          setLoading(false);
      }
@@ -289,6 +291,11 @@ export const AgentView: React.FC<AgentViewProps> = ({ user, isOnline, onModeChan
 
   return (
     <div className="p-4 max-w-lg mx-auto pb-10 h-full flex flex-col bg-background">
+      {!isOnline && (
+        <div className="fixed top-20 left-4 right-4 bg-orange-500 text-white p-4 rounded-2xl shadow-2xl z-[500] flex items-center justify-center gap-3 font-black text-xs uppercase tracking-widest">
+          <AlertTriangle size={18} /> Hors ligne — les actions seront bloquées
+        </div>
+      )}
       {lastAction && (
         <div className="fixed top-20 left-4 right-4 bg-success text-white p-4 rounded-2xl shadow-2xl z-[500] animate-bounce flex items-center justify-center gap-3 font-black text-xs uppercase tracking-widest">
           <CheckCircle size={20} /> {lastAction}
@@ -540,19 +547,35 @@ export const AgentView: React.FC<AgentViewProps> = ({ user, isOnline, onModeChan
                         {selectedEq.instructions || "Aucune consigne d'utilisation spécifique."}
                     </div>
                     
-                    {selectedEq.isBatch && activeSessionEquipmentId !== selectedEq.id && (
+                    {selectedEq.isBatch && (() => {
+                        const available = selectedEq.batchQuantity ?? 0;
+                        const total = selectedEq.batchTotal ?? available;
+                        const outCount = total - available;
+                        return (
                         <div className="mb-6 space-y-2">
-                            <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Quantité concernée</label>
-                            <input 
-                                type="number" 
-                                min={1} 
-                                max={Math.max(1, selectedEq.batchQuantity || 1)}
-                                value={takeQuantity}
-                                onChange={(e) => setTakeQuantity(parseInt(e.target.value) || 1)}
-                                className="w-full p-4 border-2 border-border rounded-2xl text-base font-black focus:border-primary focus:outline-none"
-                            />
+                            <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Quantité</label>
+                            <div className="flex items-center gap-3">
+                                <button type="button" onClick={() => setTakeQuantity(q => Math.max(1, q - 1))} className="w-12 h-12 rounded-2xl border-2 border-border font-black text-xl flex items-center justify-center hover:border-primary transition-colors">−</button>
+                                <input
+                                    type="number"
+                                    min={1}
+                                    max={Math.max(available, outCount)}
+                                    value={takeQuantity}
+                                    onChange={(e) => setTakeQuantity(Math.min(Math.max(1, parseInt(e.target.value) || 1), Math.max(available, outCount)))}
+                                    className="flex-1 p-4 border-2 border-border rounded-2xl text-base font-black text-center focus:border-primary focus:outline-none"
+                                />
+                                <button type="button" onClick={() => setTakeQuantity(q => Math.min(q + 1, Math.max(available, outCount)))} className="w-12 h-12 rounded-2xl border-2 border-border font-black text-xl flex items-center justify-center hover:border-primary transition-colors">+</button>
+                            </div>
+                            <div className="flex justify-between px-1">
+                                <p className="text-[10px] text-gray-400 font-bold">Disponible : <span className="text-primary">{available}</span> / {total}</p>
+                                {outCount > 0 && <p className="text-[10px] text-orange-400 font-bold">En circulation : {outCount}</p>}
+                            </div>
+                            <p className="text-[9px] text-gray-400 font-bold text-center px-1">
+                                Prendre : max {available} · Restituer : max {outCount > 0 ? outCount : '—'}
+                            </p>
                         </div>
-                    )}
+                        );
+                    })()}
                     
                     {(!isUserActiveElsewhere || selectedEq.isBatch) && (selectedEq.status === 'AVAILABLE' || selectedEq.isBatch) && sites.length > 0 && (
                         <div className="mb-6 space-y-2">
@@ -572,29 +595,48 @@ export const AgentView: React.FC<AgentViewProps> = ({ user, isOnline, onModeChan
                     )}
                     
                     <div className="space-y-4">
-                      {isUserActiveElsewhere && !selectedEq.isBatch ? (
+                      {selectedEq.isBatch ? (
+                        <div className="flex gap-3">
+                          <button
+                            disabled={loading || (selectedEq.batchQuantity || 0) <= 0}
+                            onClick={() => handleAction('TAKE')}
+                            className="flex-1 py-5 bg-primary text-white font-black rounded-[24px] shadow-xl shadow-primary/30 active:scale-95 transition-all flex items-center justify-center gap-3 text-xs uppercase tracking-[0.2em] disabled:opacity-50"
+                          >
+                            {loading ? <Loader2 size={20} className="animate-spin" /> : <LogIn size={20} />}
+                            {(selectedEq.batchQuantity || 0) <= 0 ? 'Rupture' : 'Prendre'}
+                          </button>
+                          <button
+                            disabled={loading}
+                            onClick={() => handleAction('RETURN')}
+                            className="flex-1 py-5 bg-dark text-white font-black rounded-[24px] shadow-2xl hover:bg-black transition-all flex items-center justify-center gap-3 text-xs uppercase tracking-[0.2em] disabled:opacity-50"
+                          >
+                            {loading ? <Loader2 size={20} className="animate-spin" /> : <LogOut size={20} />}
+                            Restituer
+                          </button>
+                        </div>
+                      ) : isUserActiveElsewhere ? (
                           <div className="p-6 bg-red-50 rounded-3xl border border-red-100 text-center">
                               <AlertTriangle className="mx-auto text-danger mb-2" size={32}/>
                               <div className="font-black text-danger text-sm mb-1">Un équipement déjà en cours</div>
                               <p className="text-xs text-gray-500 mb-4">Restituez d'abord l'équipement que vous utilisez.</p>
                           </div>
                       ) : isUserActiveHere ? (
-                        <button 
+                        <button
                           disabled={loading}
                           onClick={() => handleAction('RETURN')}
                           className="w-full py-5 bg-dark text-white font-black rounded-[24px] shadow-2xl hover:bg-black transition-all flex items-center justify-center gap-4 text-xs uppercase tracking-[0.2em] disabled:opacity-50"
                         >
-                          {loading ? <Loader2 size={24} className="animate-spin" /> : <LogOut size={24} />} 
+                          {loading ? <Loader2 size={24} className="animate-spin" /> : <LogOut size={24} />}
                           Restituer
                         </button>
-                      ) : selectedEq.status === 'AVAILABLE' || selectedEq.isBatch ? (
-                        <button 
-                          disabled={loading || (selectedEq.isBatch && (selectedEq.batchQuantity || 0) <= 0)}
+                      ) : selectedEq.status === 'AVAILABLE' ? (
+                        <button
+                          disabled={loading}
                           onClick={() => handleAction('TAKE')}
                           className="w-full py-5 bg-primary text-white font-black rounded-[24px] shadow-2xl shadow-primary/30 active:scale-95 transition-all flex items-center justify-center gap-4 text-xs uppercase tracking-[0.2em] disabled:opacity-50"
                         >
-                          {loading ? <Loader2 size={24} className="animate-spin" /> : <LogIn size={24} />} 
-                          {selectedEq.isBatch && (selectedEq.batchQuantity || 0) <= 0 ? 'Rupture de stock' : 'Prendre l\'équipement'}
+                          {loading ? <Loader2 size={24} className="animate-spin" /> : <LogIn size={24} />}
+                          Prendre l'équipement
                         </button>
                       ) : (
                           <div className="p-6 bg-orange-50 rounded-3xl border border-orange-100 text-center">
@@ -614,6 +656,7 @@ export const AgentView: React.FC<AgentViewProps> = ({ user, isOnline, onModeChan
           </div>
         </div>
       )}
+      {dialogNode}
     </div>
   );
 };

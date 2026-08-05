@@ -25,20 +25,40 @@ service cloud.firestore {
              isPlatformAdmin();
     }
 
+    // Vérifie si l'utilisateur connecté est Manager ou Admin (peut lire les profils de son équipe)
+    function isManagerOrAbove() {
+      let data = getUserData();
+      return isPlatformAdmin() || data.role in ['MANAGER', 'ADMIN'];
+    }
+
     // --- REGLES DE SECURITE ---
 
     match /users/{userId} {
-      allow read: if request.auth != null;
-      allow write: if false; 
+      allow read: if request.auth != null && (request.auth.uid == userId || isManagerOrAbove());
+      allow write: if false;
+
+      match /notifications/{notifId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
     }
 
     match /tenants/{tenantId} {
       allow read: if request.auth != null && hasTenantAccess(tenantId);
-      allow write: if false; 
-      
+      allow write: if false;
+
       match /{document=**} {
         allow read: if request.auth != null && hasTenantAccess(tenantId);
-        allow write: if false; 
+        allow write: if false;
+      }
+
+      match /cdilUnits/{unitId} {
+        allow read: if request.auth != null && hasTenantAccess(tenantId);
+        allow write: if false;
+      }
+
+      match /visitSessions/{sessionId} {
+        allow read: if request.auth != null && hasTenantAccess(tenantId);
+        allow write: if false;
       }
     }
 

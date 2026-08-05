@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { User, Tenant, UserRole, AuditLog } from '../types';
 import { db, TimeUtils } from '../services/db';
+import { useDialog } from '../hooks/useDialog';
 import { Search, Edit2, RefreshCw, X, PlayCircle, PauseCircle, ShieldCheck, UserMinus, UserPlus, Building2, Users2, Activity, History, Shield, Lock, Home, User as UserIcon, Settings, Database, Server, Trash2, AlertTriangle, Image as ImageIcon, Wrench, ChevronDown, Filter } from 'lucide-react';
 
 interface AdminPanelProps {
@@ -14,22 +15,36 @@ interface TenantWithUsage extends Tenant {
 
 // Dictionnaire de traduction des actions techniques vers du Français lisible
 const AUDIT_TRANSLATIONS: Record<string, string> = {
+    // Structure (legacy)
     'CREATE_TENANT': 'Création de Site',
     'UPDATE_TENANT': 'Mise à jour Configuration Site',
-    'CREATE_ESTABLISHMENT': 'Création Établissement',
-    'CREATE_DEPARTMENT': 'Création Zone/Service',
-    'CREATE_ROOM': 'Création de Salle',
-    'UPDATE_ROOM': 'Modification de Salle',
     'CREATE_USER': 'Création Utilisateur',
     'UPDATE_USER': 'Modification Utilisateur',
     'RESET_PASSWORD': 'Réinit. Mot de passe',
     'DELETE_CHECKIN': 'Suppression de Pointage',
     'ARCHIVE_REPORT': 'Archivage Signalement',
     'USER_LOGIN': 'Connexion Utilisateur',
-    'SYSTEM_RESET': 'Réinitialisation Système'
+    'SYSTEM_RESET': 'Réinitialisation Système',
+    // Utilisateurs
+    'USER_CREATED': 'Nouvel Utilisateur Créé',
+    'USER_UPDATED': 'Profil Utilisateur Modifié',
+    'USER_DISABLED': 'Compte Utilisateur Désactivé',
+    'USER_ENABLED': 'Compte Utilisateur Réactivé',
+    'USER_PASSWORD_RESET': 'Mot de Passe Réinitialisé',
+    // Équipements
+    'EQUIPMENT_CREATED': 'Équipement Ajouté au Parc',
+    'EQUIPMENT_UPDATED': 'Équipement Modifié',
+    'EQUIPMENT_ARCHIVED': 'Équipement Archivé',
+    // Tenants
+    'TENANT_CREATED': 'Nouveau Site Client Créé',
+    'TENANT_UPDATED': 'Configuration Site Modifiée',
+    // Tickets
+    'TICKET_STATUS_CHANGED': 'Statut Ticket Modifié',
+    'TICKET_ARCHIVED': 'Ticket Archivé',
 };
 
 export const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
+  const { confirm, toast, dialogNode } = useDialog();
   const [activeTab, setActiveTab] = useState<'tenants' | 'users' | 'audit' | 'settings'>('tenants');
   const [tenants, setTenants] = useState<TenantWithUsage[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
@@ -102,7 +117,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
       await db.createTenant(newTenantName, { equipments: quotaRooms, users: quotaUsers });
       setNewTenantName('');
       await refreshData();
-    } catch (err) { alert("Erreur."); }
+    } catch (err) { toast("Erreur."); }
     finally { setLoading(false); }
   };
 
@@ -115,7 +130,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
       setCreatedUser(newUser); 
       setManagerFirstName(''); setManagerLastName(''); setManagerEmail('');
       await refreshData();
-    } catch (err: any) { alert(err.message || "Erreur."); }
+    } catch (err: any) { toast(err.message || "Erreur."); }
     finally { setLoading(false); }
   };
 
@@ -138,7 +153,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
         await db.adminUpdateUser(selectedUser.id, { tenantsAccess: newTenantsAccess }, user);
         await refreshData();
         setSelectedUser(null);
-    } catch (e) { alert("Erreur."); }
+    } catch (e) { toast("Erreur."); }
     finally { setLoading(false); }
   };
 
@@ -153,7 +168,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
         }, user);
         setSelectedUser({ ...selectedUser, isArchived: nextStatus });
         await refreshData();
-    } catch (e) { alert("Erreur."); }
+    } catch (e) { toast("Erreur."); }
     finally { setLoading(false); }
   };
 
@@ -165,13 +180,14 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
         await db.adminUpdateUser(selectedUser.id, { isDisabled: nextStatus }, user);
         setSelectedUser({ ...selectedUser, isDisabled: nextStatus });
         await refreshData();
-    } catch (e) { alert("Erreur."); }
+    } catch (e) { toast("Erreur."); }
     finally { setLoading(false); }
   };
 
   const handleResetPassword = async () => {
     if (!selectedUser) return;
-    if (!confirm("Attention : Cela va générer un nouveau mot de passe temporaire pour cet utilisateur. Voulez-vous continuer ?")) return;
+    const ok = await confirm({ title: 'Réinitialiser le mot de passe', message: "Un nouveau mot de passe temporaire sera généré. L'utilisateur devra le modifier à la prochaine connexion.", confirmLabel: 'Réinitialiser', variant: 'warning' });
+    if (!ok) return;
     setLoading(true);
     try {
         const result = await db.managerResetPassword(selectedUser.id, user);
@@ -184,9 +200,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
             // On ferme la modale d'édition pour voir le mot de passe
             setSelectedUser(null);
         } else {
-            alert("Réinitialisation demandée. L'utilisateur devra changer son mot de passe à la prochaine connexion.");
+            toast("Réinitialisation demandée. L'utilisateur devra changer son mot de passe à la prochaine connexion.", 'info');
         }
-    } catch (e) { alert("Erreur."); }
+    } catch (e) { toast("Erreur."); }
     finally { setLoading(false); }
   };
 
@@ -197,7 +213,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
       await db.adminUpdateTenantBranding(showBrandingModal.id, tempLogoUrl, user);
       await refreshData();
       setShowBrandingModal(null);
-    } catch (e) { alert("Erreur Branding."); }
+    } catch (e) { toast("Erreur Branding."); }
     finally { setLoading(false); }
   };
 
@@ -205,20 +221,20 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
       setLoading(true);
       try {
           await db.repairAdminProfile();
-          alert("Profil réparé. Veuillez rafraîchir la page.");
+          toast('Profil réparé. La page va se rafraîchir.', 'success');
           window.location.reload();
-      } catch (e: any) { alert("Erreur réparation : " + e.message); }
+      } catch (e: any) { toast("Erreur réparation : " + e.message); }
       finally { setLoading(false); }
   };
 
   const handlePlatformReset = async () => {
-    if (!confirm("ATTENTION : Cette action est irréversible. Tous les tenants, locaux, pointages et comptes (sauf le vôtre) seront supprimés. Confirmer ?")) return;
+    const ok = await confirm({ title: 'Réinitialisation complète de la plateforme', message: 'ATTENTION — Action irréversible. Tous les tenants, équipements et comptes (sauf le vôtre) seront supprimés définitivement.', confirmLabel: 'Tout supprimer', variant: 'danger' });
+    if (!ok) return;
     setLoading(true);
     try {
         await db.dangerousResetPlatform(user.id);
-        alert("Plateforme réinitialisée avec succès.");
         window.location.reload();
-    } catch (e) { alert("Erreur lors de la réinitialisation."); }
+    } catch (e) { toast("Erreur lors de la réinitialisation."); }
     finally { setLoading(false); }
   };
 
@@ -245,6 +261,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
         case 'SECURITY': return <ShieldCheck size={18}/>;
         case 'STRUCTURE': return <Building2 size={18}/>;
         case 'BILLING': return <Activity size={18}/>;
+        case 'USER': return <UserIcon size={18}/>;
         default: return <UserIcon size={18}/>;
     }
   };
@@ -254,6 +271,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
         case 'SECURITY': return 'bg-red-50 text-danger border-red-100';
         case 'STRUCTURE': return 'bg-blue-50 text-primary border-blue-100';
         case 'BILLING': return 'bg-indigo-50 text-indigo-500 border-indigo-100';
+        case 'USER': return 'bg-success/10 text-success border-success/20';
         default: return 'bg-gray-50 text-gray-500 border-gray-100';
     }
   };
@@ -321,7 +339,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
                       <input required value={newTenantName} onChange={e => setNewTenantName(e.target.value)} className="w-full border-2 border-border rounded-2xl p-4 text-sm font-black text-dark outline-none focus:border-primary transition-all" placeholder="Nom de l'organisation" />
                       <div className="grid grid-cols-2 gap-6">
                         <div className="space-y-1.5">
-                          <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Quota Salles</label>
+                          <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Quota Équipements</label>
                           <input type="number" value={quotaRooms} onChange={e => setQuotaRooms(Number(e.target.value))} className="w-full border-2 border-border rounded-2xl p-4 text-sm font-black text-dark outline-none" />
                         </div>
                         <div className="space-y-1.5">
@@ -374,7 +392,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
                         <td className="px-10 py-8 space-y-4">
                             {t.usage && (
                                 <>
-                                    {renderUsageBar(t.usage.equipmentsCount, t.quotas.equipments, 'Locaux')}
+                                    {renderUsageBar(t.usage.equipmentsCount, t.quotas.equipments, 'Équipements')}
                                     {renderUsageBar(t.usage.usersCount, t.quotas.users, 'Utilisateurs')}
                                 </>
                             )}
@@ -559,7 +577,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
                     <div className="bg-gray-50 p-6 sm:p-8 rounded-[32px] border border-border space-y-4">
                         <div className="flex items-center gap-3 text-dark"><Settings size={20} className="text-primary"/><span className="text-xs font-black uppercase tracking-widest">Global Config</span></div>
                         <p className="text-xs text-gray-500 leading-relaxed font-medium">Mise à jour des paramètres système et gestion des ressources partagées.</p>
-                        <button className="w-full bg-white border border-border text-dark py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-primary hover:text-white transition-all shadow-sm">Paramétrer</button>
+                        <button onClick={() => toast('Configuration système disponible dans une prochaine mise à jour.', 'info')} className="w-full bg-white border border-border text-dark py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-primary hover:text-white transition-all shadow-sm">Paramétrer</button>
                     </div>
                 </div>
 
@@ -653,6 +671,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
            </div>
         </div>
       )}
+      {dialogNode}
     </div>
   );
 };

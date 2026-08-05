@@ -1,6 +1,6 @@
 import React, { ReactNode, useState, useEffect } from 'react';
 import { User, UserRole, Tenant, AppNotification } from '../types';
-import { LogOut, LayoutDashboard, QrCode, Settings, Shield, ChevronDown, Wrench, Bell } from 'lucide-react';
+import { LogOut, LayoutDashboard, QrCode, Settings, Shield, ChevronDown, Wrench, Bell, ClipboardList } from 'lucide-react';
 import { db } from '../services/db';
 import { Logo } from './Logo';
 
@@ -9,8 +9,8 @@ interface LayoutProps {
   user: User;
   isOnline: boolean;
   onLogout: () => void;
-  currentView: 'dashboard' | 'agent' | 'management' | 'admin' | 'tickets';
-  onNavigate: (view: 'dashboard' | 'agent' | 'management' | 'admin' | 'tickets') => void;
+  currentView: 'dashboard' | 'agent' | 'management' | 'admin' | 'tickets' | 'cdil';
+  onNavigate: (view: 'dashboard' | 'agent' | 'management' | 'admin' | 'tickets' | 'cdil') => void;
   onSwitchTenant?: (tenantId: string) => void;
   hideBottomNav?: boolean;
 }
@@ -84,11 +84,13 @@ export const Layout: React.FC<LayoutProps> = ({
   if (user.role === UserRole.MANAGER) {
     navItems.push({ id: 'management', label: 'GESTION', icon: Settings });
     navItems.push({ id: 'dashboard', label: 'SUIVI', icon: LayoutDashboard });
+    navItems.push({ id: 'tickets', label: 'TICKETS', icon: Wrench });
     navItems.push({ id: 'agent', label: 'SCAN', icon: QrCode });
   } else if (user.role === UserRole.CLIENT) {
     navItems.push({ id: 'dashboard', label: 'SUIVI', icon: LayoutDashboard });
   } else if (user.role === UserRole.TECHNICIAN) {
     navItems.push({ id: 'tickets', label: 'TICKETS', icon: Wrench });
+    navItems.push({ id: 'cdil', label: 'VISITES', icon: ClipboardList });
     navItems.push({ id: 'agent', label: 'SCAN', icon: QrCode });
   } else if (user.role === UserRole.AGENT) {
     navItems.push({ id: 'agent', label: 'SCAN', icon: QrCode });
@@ -191,8 +193,8 @@ export const Layout: React.FC<LayoutProps> = ({
                                     <div key={n.id} onClick={() => !n.read && db.markNotificationRead(user.id, n.id)} className={`p-4 border-b border-border last:border-0 transition-colors ${!n.read ? 'bg-primary/5 cursor-pointer' : 'bg-white opacity-80'}`}>
                                         <div className="flex gap-3">
                                             <div className="mt-1 shrink-0">
-                                                {n.type === 'MAINTENANCE_REQUIRED' ? <Wrench size={16} className={`${n.read ? 'text-gray-400' : 'text-orange-500'}`}/> :
-                                                 n.type === 'TICKET_CREATED' ? <Shield size={16} className={`${n.read ? 'text-gray-400' : 'text-red-500'}`}/> :
+                                                {n.type === 'WARNING' ? <Wrench size={16} className={`${n.read ? 'text-gray-400' : 'text-orange-500'}`}/> :
+                                                 n.type === 'CRITICAL' ? <Shield size={16} className={`${n.read ? 'text-gray-400' : 'text-red-500'}`}/> :
                                                  <Bell size={16} className={`${n.read ? 'text-gray-400' : 'text-primary'}`}/>}
                                             </div>
                                             <div className="flex-1 min-w-0">

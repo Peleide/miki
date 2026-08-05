@@ -59,6 +59,59 @@ export interface AuditLog {
   serverTimestamp?: any;
 }
 
+// --- CENTRALES DE DILUTION & VISITES TECHNIQUES ---
+
+/** État d'un composant lors d'une visite : ok = pas de remplacement, 1 = 1 remplacement, 2 = 2 remplacements */
+export type ComponentState = 'ok' | 1 | 2;
+
+/** Une unité CDil installée à un emplacement fixe dans l'établissement */
+export interface CdilUnit {
+  id: string;
+  tenantId: string;
+  serialNumber: string;        // identifiant constructeur ex. "4839", "11503", "Serial n. 06A01243A"
+  location: string;            // localisation complète ex. "Oncologie B26"
+  service: string;             // service hospitalier ex. "Oncologie"
+  roomCode: string;            // code salle ex. "B26"
+  isActive: boolean;
+  createdAt: string;
+  lastVisitDate?: string;
+  currentState?: {
+    buse: ComponentState;
+    crepine: ComponentState;
+    ligne: ComponentState;
+  };
+  notes?: string;
+}
+
+/** Une ligne d'une session de visite (un CDil visité) */
+export interface VisitEntry {
+  unitId: string;
+  serialNumber: string;        // snapshot au moment de la visite
+  location: string;            // snapshot
+  service: string;             // snapshot
+  buse: ComponentState;
+  crepine: ComponentState;
+  ligne: ComponentState;
+  remarks?: string;
+  photos?: string[];           // future: URLs Firebase Storage
+}
+
+/** Une session de visite technique (regroupe plusieurs unités visitées en une tournée) */
+export interface VisitSession {
+  id: string;
+  tenantId: string;
+  type: 'CDIL';                // extensible à d'autres types de visites
+  sessionType: 'PERIODIQUE' | 'INTERVENTION'; // périodique (2/an, toutes unités) ou inopinée (sélection)
+  title: string;               // ex. "Visite technique Mai 2026"
+  date: string;                // date de la visite (ISO)
+  technicianId: string;
+  technicianName: string;      // snapshot
+  status: 'DRAFT' | 'COMPLETED';
+  createdAt: string;
+  completedAt?: string;
+  entries: VisitEntry[];       // unités visitées dans cette session
+}
+
 export interface DaySchedule {
   start: string;
   end: string;
@@ -108,37 +161,67 @@ export interface User {
   weeklySchedule?: WeeklySchedule;
 }
 
+export interface EquipmentType {
+  id: string;
+  tenantId?: string;
+  name: string;    // "Autolaveuse"
+  code: string;    // "AL"
+  isDefault?: boolean;
+  isArchived?: boolean;
+}
+
+export const DEFAULT_EQUIPMENT_TYPES: EquipmentType[] = [
+  { id: 'default-tel',  name: 'Téléphone',             code: 'Tél',  isDefault: true },
+  { id: 'default-al',   name: 'Autolaveuse',            code: 'AL',   isDefault: true },
+  { id: 'default-mal',  name: 'Mini Autolaveuse',       code: 'MAL',  isDefault: true },
+  { id: 'default-nv',   name: 'Nettoyeur Vapeur',       code: 'NV',   isDefault: true },
+  { id: 'default-cha',  name: 'Chariot',                code: 'Cha',  isDefault: true },
+  { id: 'default-v',    name: 'Voiture',                code: 'V',    isDefault: true },
+  { id: 'default-cdil', name: 'Centrale de Dilution',   code: 'CDil', isDefault: true },
+];
+
 export interface Equipment {
   id: string;
   tenantId: string;
-  
-  // Hierarchy
-  type: string;        // e.g., "Outil portatif"
-  subType: string;     // e.g., "Perceuse"
-  brand: string;       // e.g., "Makita"
-  model: string;       // e.g., "DHP482"
-  serialNumber?: string; // N° de série fabricant
-  uniqueId: string;    // Plaque d'immat, N° interne, ou ID unique attribué
-  
-  name: string;        // Auto-generated or custom: e.g. "Makita DHP482 (001)"
+
+  // Category (new nomenclature system)
+  category?: string;         // "Autolaveuse"
+  categoryCode?: string;     // "AL"
+  storageLocation?: string;  // Lieu de rangement fixe, ex: "Dépôt A"
+
+  // Traceability dates (auto-updated from resolved tickets)
+  lastVisiteTechniqueDate?: string;
+  lastReparationDate?: string;
+  createdAt?: string;
+
+  // Legacy classification
+  type: string;
+  subType: string;
+  brand: string;
+  model: string;
+  serialNumber?: string;
+  uniqueId: string;    // N° de référence interne
+
+  name: string;
   qrCode: string;
   instructions?: string;
-  
+
   // Equipment Status Management
   status: 'AVAILABLE' | 'IN_USE' | 'MAINTENANCE' | 'ARCHIVED';
-  
+
   // Batch Management (Petit Matériel)
-  isBatch: boolean;    
-  batchQuantity?: number;
-  
+  isBatch: boolean;
+  batchQuantity?: number;  // stock actuellement disponible
+  batchTotal?: number;     // quantité totale de référence (plafond)
+
   // Kits Management (Lots)
   isKit?: boolean;
   childEquipmentIds?: string[];
   parentId?: string;
-  
+
   // Geolocation / Sites
   currentSiteId?: string;
-  
+
   // Maintenance Preventive
   usageCount: number;
   usageCountBeforeMaintenance?: number;

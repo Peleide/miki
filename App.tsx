@@ -5,6 +5,7 @@ import { Dashboard } from './components/Dashboard';
 import { AgentView } from './components/AgentView';
 import { ManagementPanel } from './components/ManagementPanel';
 import { TicketPanel } from './components/TicketPanel';
+import { CdilVisitPanel } from './components/CdilVisitPanel';
 import { AdminPanel } from './components/AdminPanel'; 
 import { Login } from './components/Login'; 
 import { ForcePasswordChange } from './components/ForcePasswordChange'; 
@@ -102,6 +103,8 @@ function App() {
              setCurrentView('dashboard');
         } else if (savedView === 'tickets' && user.role === UserRole.TECHNICIAN) {
              setCurrentView('tickets');
+        } else if (savedView === 'cdil' && (user.role === UserRole.TECHNICIAN || user.role === UserRole.MANAGER)) {
+             setCurrentView('cdil');
         } else {
              // Fallback par défaut
              if (user.role === UserRole.TECHNICIAN) setCurrentView('tickets');
@@ -142,6 +145,7 @@ function App() {
         
         if (updatedUser.role === UserRole.ADMIN) handleNavigate('admin');
         else if (updatedUser.role === UserRole.AGENT) handleNavigate('agent');
+        else if (updatedUser.role === UserRole.TECHNICIAN) handleNavigate('tickets');
         else handleNavigate('dashboard');
     } catch (e) {
         alert("Impossible de changer d'organisation.");
@@ -221,8 +225,12 @@ function App() {
         />
       )}
 
-      {currentView === 'tickets' && user.role === UserRole.TECHNICIAN && (
+      {currentView === 'tickets' && (user.role === UserRole.TECHNICIAN || user.role === UserRole.MANAGER) && (
         <TicketPanel user={user} />
+      )}
+
+      {currentView === 'cdil' && (user.role === UserRole.TECHNICIAN || user.role === UserRole.MANAGER) && (
+        <CdilVisitPanel user={user} />
       )}
       
       {currentView === 'dashboard' && user.role === UserRole.AGENT && (

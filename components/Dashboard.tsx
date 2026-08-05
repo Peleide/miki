@@ -1,16 +1,19 @@
 import React, { useEffect, useState, useMemo } from 'react';
-import { User, EquipmentLog, Equipment, UserRole, Tenant, IncidentReport } from '../types';
+import { User, EquipmentLog, Equipment, UserRole, Tenant, IncidentReport, DEFAULT_EQUIPMENT_TYPES } from '../types';
 import { db, TimeUtils } from '../services/db';
 import { Download, Filter, Search, Calendar, ChevronLeft, ChevronRight, Activity, MessageSquare, AlertTriangle, Inbox, CheckSquare, Zap, Clock, ShieldCheck, Database, RefreshCw, TrendingUp, PieChart, Info, Settings2, Box, ArrowLeft, ClipboardList } from 'lucide-react';
+import { useDialog } from '../hooks/useDialog';
 
 interface DashboardProps {
   user: User;
 }
 
 export const Dashboard: React.FC<DashboardProps> = ({ user }) => {
+  const { toast, dialogNode } = useDialog();
   const [activeTab, setActiveTab] = useState<'metrics' | 'logs' | 'incidentReports' | 'equipments'>('metrics');
   const [selectedEquipment, setSelectedEquipment] = useState<Equipment | null>(null);
   const [reportStatusFilter, setReportStatusFilter] = useState<'OPEN' | 'ARCHIVED'>('OPEN');
+  const [categoryFilter, setCategoryFilter] = useState<string>('ALL');
   
   const todayStr = new Date().toISOString().slice(0, 10);
   const [filterStartDate, setFilterStartDate] = useState(todayStr); 
@@ -43,9 +46,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ user }) => {
         }
 
         const [l, eq, u, t, rep, mLogs, chks] = await Promise.all([
-            db.getEquipmentLogs(user.tenantId, user.role, 500, range), 
+            db.getEquipmentLogs(user.tenantId, user.role, 500, range),
             db.getEquipments(user.tenantId),
-            db.getUsers(user.tenantId),
+            isClient ? Promise.resolve([]) : db.getUsers(user.tenantId),
             db.getTenant(user.tenantId),
             db.getIncidentReports(user.tenantId, reportStatusFilter),
             db.getMaintenanceLogs(user.tenantId),
@@ -85,8 +88,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ user }) => {
       try {
           await db.archiveReport(user.tenantId, reportId, user);
           setReports(prev => prev.filter(r => r.id !== reportId));
-      } catch (e) { 
-          alert("Erreur lors de l'archivage."); 
+      } catch (e) {
+          toast("Erreur lors de l'archivage.");
       }
   };
 
@@ -279,7 +282,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ user }) => {
                                       </td>
                                       <td className="px-10 py-5">
                                           <div className="font-medium text-gray-600 bg-gray-50 border px-3 py-1 rounded-lg inline-block text-xs">
-                                              {log.userNameSnapshot}
+                                              {log.agentNameSnapshot}
                                           </div>
                                       </td>
                                       <td className="px-10 py-5 text-right">
@@ -339,10 +342,29 @@ export const Dashboard: React.FC<DashboardProps> = ({ user }) => {
               {activeTab === 'equipments' && (
                   <div className="animate-in fade-in">
                       {!selectedEquipment ? (
+                          <>
+                          {/* Filtres par catégorie */}
+                          <div className="flex flex-wrap gap-2 mb-6">
+                              {['ALL', ...Array.from(new Set(equipments.map(e => e.category || e.type).filter(Boolean)))].map(cat => (
+                                  <button
+                                      key={cat}
+                                      onClick={() => setCategoryFilter(cat)}
+                                      className={`px-4 py-2 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${
+                                          categoryFilter === cat
+                                              ? 'bg-primary text-white shadow-sm'
+                                              : 'bg-white border border-border text-gray-500 hover:border-primary/30'
+                                      }`}
+                                  >
+                                      {cat === 'ALL' ? 'Tout' : cat}
+                                  </button>
+                              ))}
+                          </div>
                           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                              {equipments.map(eq => (
-                                  <div 
-                                    key={eq.id} 
+                              {equipments
+                                  .filter(eq => categoryFilter === 'ALL' || (eq.category || eq.type) === categoryFilter)
+                                  .map(eq => (
+                                  <div
+                                    key={eq.id}
                                     onClick={() => setSelectedEquipment(eq)}
                                     className="bg-white p-6 rounded-[32px] border border-border shadow-sm flex flex-col gap-2 cursor-pointer hover:shadow-xl hover:border-primary/30 transition-all group"
                                   >
@@ -351,21 +373,27 @@ export const Dashboard: React.FC<DashboardProps> = ({ user }) => {
                                               <Box size={24}/>
                                           </div>
                                           <div className={`px-2 py-1 rounded-lg text-[8px] font-black uppercase tracking-widest ${eq.status === 'AVAILABLE' ? 'bg-success/10 text-success' : eq.status === 'IN_USE' ? 'bg-orange-100 text-orange-600' : 'bg-danger/10 text-danger'}`}>
-                                              {eq.status}
+                                              {eq.status === 'AVAILABLE' ? 'DISPO' : eq.status === 'IN_USE' ? 'EMPRUNTÉ' : 'MAINT.'}
                                           </div>
                                       </div>
                                       <div className="mt-4">
                                           <h3 className="font-black text-dark group-hover:text-primary transition-colors line-clamp-2">{eq.name}</h3>
-                                          <p className="text-[10px] font-black uppercase tracking-widest text-gray-400 mt-1">{eq.brand} • {eq.model}</p>
+                                          {(eq.category || eq.type) && (
+                                              <span className="text-[9px] font-black bg-gray-100 text-gray-500 px-2 py-0.5 rounded-lg uppercase tracking-widest">{eq.categoryCode || ''} {eq.category || eq.type}</span>
+                                          )}
+                                          {eq.storageLocation && (
+                                              <p className="text-[10px] font-bold text-gray-400 mt-1">📍 {eq.storageLocation}</p>
+                                          )}
                                       </div>
                                   </div>
                               ))}
-                              {equipments.length === 0 && (
+                              {equipments.filter(eq => categoryFilter === 'ALL' || (eq.category || eq.type) === categoryFilter).length === 0 && (
                                   <div className="col-span-full py-20 text-center text-gray-400 text-xs font-black uppercase tracking-widest">
                                       Aucun objet répertorié.
                                   </div>
                               )}
                           </div>
+                          </>
                       ) : (
                           <div className="space-y-6">
                               <button 
@@ -385,7 +413,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ user }) => {
                                       </div>
                                       <p className="text-xs font-black uppercase tracking-widest text-gray-400">{selectedEquipment.brand} • {selectedEquipment.model} • ID: {selectedEquipment.uniqueId}</p>
                                   </div>
-                                  <div className="flex gap-4">
+                                  <div className="flex flex-wrap gap-3">
                                       <div className="bg-gray-50 px-6 py-4 rounded-3xl border border-gray-100 text-center">
                                           <div className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-1">Usages</div>
                                           <div className="text-2xl font-black text-dark">{selectedEquipment.usageCount}</div>
@@ -394,6 +422,34 @@ export const Dashboard: React.FC<DashboardProps> = ({ user }) => {
                                           <div className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-1">Proch. Maintenance</div>
                                           <div className="text-sm font-black text-dark mt-2">{selectedEquipment.nextMaintenanceDate ? TimeUtils.formatInTimezone(selectedEquipment.nextMaintenanceDate, timezone, { dateStyle: 'short' }) : '-'}</div>
                                       </div>
+                                      {selectedEquipment.storageLocation && (
+                                          <div className="bg-gray-50 px-6 py-4 rounded-3xl border border-gray-100 text-center">
+                                              <div className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-1">Local de stockage</div>
+                                              <div className="text-sm font-black text-dark mt-2">{selectedEquipment.storageLocation}</div>
+                                          </div>
+                                      )}
+                                      <div className={`px-6 py-4 rounded-3xl border text-center ${selectedEquipment.lastVisiteTechniqueDate ? 'bg-success/5 border-success/20' : 'bg-gray-50 border-gray-100'}`}>
+                                          <div className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-1">Visite Technique</div>
+                                          <div className="text-sm font-black text-dark mt-2">
+                                              {selectedEquipment.lastVisiteTechniqueDate
+                                                  ? TimeUtils.formatInTimezone(selectedEquipment.lastVisiteTechniqueDate, timezone, { dateStyle: 'short' })
+                                                  : 'Non'}
+                                          </div>
+                                      </div>
+                                      <div className={`px-6 py-4 rounded-3xl border text-center ${selectedEquipment.lastReparationDate ? 'bg-orange-50 border-orange-100' : 'bg-gray-50 border-gray-100'}`}>
+                                          <div className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-1">Réparation</div>
+                                          <div className="text-sm font-black text-dark mt-2">
+                                              {selectedEquipment.lastReparationDate
+                                                  ? TimeUtils.formatInTimezone(selectedEquipment.lastReparationDate, timezone, { dateStyle: 'short' })
+                                                  : 'Non'}
+                                          </div>
+                                      </div>
+                                      {selectedEquipment.createdAt && (
+                                          <div className="bg-gray-50 px-6 py-4 rounded-3xl border border-gray-100 text-center">
+                                              <div className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-1">Créé le</div>
+                                              <div className="text-sm font-black text-dark mt-2">{TimeUtils.formatInTimezone(selectedEquipment.createdAt, timezone, { dateStyle: 'short' })}</div>
+                                          </div>
+                                      )}
                                   </div>
                               </div>
 
@@ -454,7 +510,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ user }) => {
                                                           {log.action}
                                                       </div>
                                                       <div>
-                                                          <div className="font-black text-xs text-dark">{log.userNameSnapshot}</div>
+                                                          <div className="font-black text-xs text-dark">{log.agentNameSnapshot}</div>
                                                           <div className="text-[10px] text-gray-400 font-medium">
                                                               {TimeUtils.formatInTimezone(log.timestamp, timezone, { dateStyle: 'short', timeStyle: 'short' })}
                                                           </div>
@@ -478,6 +534,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ user }) => {
             )}
         </div>
       </div>
+      {dialogNode}
     </div>
   );
 };
