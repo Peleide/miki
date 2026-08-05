@@ -5,17 +5,27 @@
 
 ---
 
+## Glossaire rapide
+
+**Tenant** (ou *espace client*) : dans MIKI, chaque établissement client (hôpital, clinique, centre de soin…) dispose de son propre espace isolé, appelé "tenant". Toutes les données d'un établissement — équipements, utilisateurs, tickets, visites — sont cloisonnées dans cet espace et invisibles des autres. Le terme "tenant" est conservé dans ce document car il correspond au vocabulaire technique du code, mais il désigne simplement **l'espace d'un établissement**.
+
+**Plateforme** : l'espace réservé à l'équipe MIKI/Clean&Tech elle-même, distinct de tous les espaces clients. L'ADMIN y opère.
+
+**Cloud Function** : traitement côté serveur déclenché par l'application. Toutes les actions sensibles (créer un équipement, modifier un compte…) passent obligatoirement par ce mécanisme — jamais directement depuis le navigateur. C'est la couche qui applique les règles de sécurité.
+
+---
+
 ## Hiérarchie des rôles
 
 ```
-ADMIN (plateforme)
-  └── MANAGER (tenant)
-        └── TECHNICIAN (tenant)
-              └── AGENT (tenant)
-                    └── CLIENT (tenant, lecture seule)
+ADMIN       → équipe MIKI / Clean&Tech (accès global, tous les établissements)
+  └── MANAGER     → responsable au sein d'un établissement client
+        └── TECHNICIAN  → technicien de terrain Clean&Tech rattaché à un établissement
+              └── AGENT       → utilisateur de terrain de l'établissement (soignant, logisticien…)
+                    └── CLIENT      → observateur de l'établissement (direction, qualité…)
 ```
 
-Un rôle hérite des droits des rôles inférieurs **sauf ADMIN → MANAGER** : l'ADMIN est global (multi-tenant), le MANAGER est limité à son tenant.
+Un rôle hérite des droits des rôles inférieurs **sauf ADMIN → MANAGER** : l'ADMIN est global (il voit tous les établissements), le MANAGER est limité à son propre établissement.
 
 ---
 
@@ -26,7 +36,7 @@ Un rôle hérite des droits des rôles inférieurs **sauf ADMIN → MANAGER** : 
 ### ADMIN
 
 **Qui est-ce ?**
-L'administrateur de la plateforme MIKI. Il n'appartient à aucun tenant client — son tenant est `platform`. En pratique, c'est l'équipe Clean&Tech qui opère MIKI.
+L'administrateur de la plateforme MIKI. Il n'appartient à aucun tenant (espace établissement) client — son espace est `platform`, réservé à l'équipe interne. En pratique, c'est l'équipe Clean&Tech qui opère MIKI.
 
 **Ce qu'il peut faire**
 L'ADMIN a un accès illimité à l'ensemble de la plateforme. Il crée et configure les tenants clients (hôpitaux, cliniques), peut suspendre un tenant, et consulte le journal d'audit complet de toutes les actions réalisées sur la plateforme. Il peut intervenir sur n'importe quel compte utilisateur, quel que soit son rôle ou son tenant.
@@ -47,15 +57,15 @@ Rien de bloqué côté système. L'ADMIN est le niveau d'accès maximum.
 Le responsable opérationnel côté client — typiquement un chef de service, un référent matériel ou un coordinateur logistique au sein de l'établissement. Il a la main sur tout ce qui concerne son établissement.
 
 **Ce qu'il peut faire**
-Le MANAGER administre l'intégralité de son tenant : il crée et modifie les équipements, gère les comptes utilisateurs (création, désactivation, réinitialisation de mot de passe), configure les checklists, les chantiers et les paramètres du tenant (fuseau horaire, quotas, sécurité). Il suit les emprunts et les incidents via le dashboard, traite les tickets, peut clôturer et archiver. Il pilote aussi les centrales CDil : configuration des unités, consultation de l'historique des visites et export CSV.
+Le MANAGER administre l'intégralité de son espace établissement (tenant) : il crée et modifie les équipements, gère les comptes utilisateurs (création, désactivation, réinitialisation de mot de passe), configure les checklists, les chantiers et les paramètres de l'établissement (fuseau horaire, quotas, sécurité). Il suit les emprunts et les incidents via le dashboard, traite les tickets, peut clôturer et archiver. Il pilote aussi les centrales CDil : configuration des unités, consultation de l'historique des visites et export CSV.
 
 **Ce qu'il ne peut pas faire**
-Il ne peut pas modifier un compte ADMIN plateforme. Il n'a pas accès aux audit_logs complets (réservés à l'ADMIN). Il ne peut pas créer de nouveaux tenants.
+Il ne peut pas modifier un compte ADMIN plateforme. Il n'a pas accès aux audit_logs complets (réservés à l'ADMIN). Il ne peut pas créer de nouveaux espaces établissement (tenants).
 
 **Questions ouvertes**
 - Le MANAGER doit-il pouvoir supprimer définitivement des équipements, ou uniquement archiver ? Aujourd'hui seul l'archivage est possible.
 - Faut-il distinguer un rôle "MANAGER lecture seule" (chef de service qui consulte sans modifier) d'un "MANAGER admin" (qui gère les comptes) ? Aujourd'hui il n'y a qu'un seul niveau MANAGER.
-- Le MANAGER peut-il voir les données d'un autre tenant si un utilisateur appartient à plusieurs ? À clarifier pour les organisations multi-sites.
+- Le MANAGER peut-il voir les données d'un autre espace établissement si un utilisateur appartient à plusieurs ? À clarifier pour les organisations multi-sites.
 
 ---
 
@@ -72,7 +82,7 @@ Il ne peut pas archiver de tickets (action MANAGER). Il n'a pas accès à la ges
 
 **Questions ouvertes**
 - Le TECHNICIAN doit-il pouvoir **créer et modifier des unités CDil**, ou uniquement réaliser des visites sur des unités déjà configurées par le MANAGER ? Actuellement il le peut — ce périmètre est-il voulu ?
-- Un technicien intervient parfois sur plusieurs établissements. Faut-il lui permettre de basculer entre plusieurs tenants, comme l'ADMIN le fait ? Aujourd'hui ce n'est pas possible.
+- Un technicien intervient parfois sur plusieurs établissements. Faut-il lui permettre de basculer entre plusieurs espaces établissement (tenants), comme l'ADMIN le fait ? Aujourd'hui ce n'est pas possible.
 - Faut-il que le TECHNICIAN puisse clôturer un ticket sans passer par le MANAGER, ou la résolution doit-elle toujours être validée par un MANAGER ?
 
 ---
@@ -212,7 +222,7 @@ Il ne peut exécuter aucune action — pas d'emprunt, pas de ticket, pas de sign
 | `tenants/{tenantId}/**` | Authentifié + accès tenant | ❌ CF uniquement |
 | `audit_logs/{id}` | ADMIN plateforme uniquement | ❌ Serveur uniquement |
 
-**Principe général** : aucune écriture directe client vers Firestore. Toutes les mutations passent par les Cloud Functions.
+**Principe général** : aucune écriture directe client vers Firestore. Toutes les mutations passent par les Cloud Functions (fonctions serveur sécurisées).
 
 ---
 
