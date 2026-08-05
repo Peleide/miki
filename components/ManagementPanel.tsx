@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import QRCode from 'react-qr-code';
 import { User, Equipment, Tenant, UserRole, WeeklySchedule, DaySchedule, Site, EquipmentType, CdilUnit, VisitSession, VisitEntry } from '../types';
 import { db } from '../services/db';
-import { Plus, QrCode, RefreshCw, Printer, X, Download, User as UserIcon, Box, Pencil, Search, Check, ListChecks, MapPin, KeyRound, Power, ClipboardList, Droplets, Loader2, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Plus, QrCode, RefreshCw, Printer, X, Download, User as UserIcon, Box, Pencil, Search, Check, ListChecks, MapPin, KeyRound, Power, ClipboardList, Droplets, Loader2, ChevronLeft, ChevronRight, Settings2, ShieldCheck, Gauge } from 'lucide-react';
 import { Logo } from './Logo';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
@@ -21,7 +21,7 @@ export const ManagementPanel: React.FC<ManagementPanelProps> = ({ user }) => {
   const [tenant, setTenant] = useState<Tenant | undefined>(undefined);
   const [equipmentTypes, setEquipmentTypes] = useState<EquipmentType[]>([]);
   
-  const [activeTab, setActiveTab] = useState<'equipments' | 'users' | 'qrs' | 'checklists' | 'sites' | 'centrales'>('equipments');
+  const [activeTab, setActiveTab] = useState<'equipments' | 'users' | 'qrs' | 'checklists' | 'sites' | 'centrales' | 'settings'>('equipments');
   const [loading, setLoading] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
   const [isPrintMode, setIsPrintMode] = useState(false);
@@ -87,6 +87,16 @@ export const ManagementPanel: React.FC<ManagementPanelProps> = ({ user }) => {
   const [chkItems, setChkItems] = useState<any[]>([]);
   const [editingChk, setEditingChk] = useState<any>(null);
 
+  // Settings
+  const [settingsName, setSettingsName] = useState('');
+  const [settingsTimezone, setSettingsTimezone] = useState('');
+  const [settingsQuotaEq, setSettingsQuotaEq] = useState(50);
+  const [settingsQuotaUsers, setSettingsQuotaUsers] = useState(20);
+  const [settingsMinDelay, setSettingsMinDelay] = useState(0);
+  const [settingsMaxCheckins, setSettingsMaxCheckins] = useState(0);
+  const [settingsRateWindow, setSettingsRateWindow] = useState(0);
+  const [settingsLoading, setSettingsLoading] = useState(false);
+
   const [searchQuery, setSearchQuery] = useState('');
   const [filterType, setFilterType] = useState('ALL');
   const [eqPage, setEqPage] = useState(1);
@@ -113,6 +123,15 @@ export const ManagementPanel: React.FC<ManagementPanelProps> = ({ user }) => {
         setEquipments((eqs as any).filter((e: any) => showArchived ? true : !e.isArchived));
         setUsers(usrs);
         setTenant(tnt);
+        if (tnt) {
+            setSettingsName(tnt.name || '');
+            setSettingsTimezone(tnt.timezone || 'Pacific/Noumea');
+            setSettingsQuotaEq(tnt.quotas?.equipments ?? 50);
+            setSettingsQuotaUsers(tnt.quotas?.users ?? 20);
+            setSettingsMinDelay(tnt.security?.minCheckInDelaySeconds ?? 0);
+            setSettingsMaxCheckins(tnt.security?.maxCheckInsPerWindow ?? 0);
+            setSettingsRateWindow(tnt.security?.rateLimitWindowSeconds ?? 0);
+        }
         setChecklists((chks as any).filter((c: any) => showArchived ? true : !c.isArchived));
         setSites((sts as any).filter((s: any) => showArchived ? true : s.status !== 'ARCHIVED'));
         setEquipmentTypes(types);
@@ -344,6 +363,26 @@ export const ManagementPanel: React.FC<ManagementPanelProps> = ({ user }) => {
     URL.revokeObjectURL(url);
   };
 
+  const handleSaveSettings = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSettingsLoading(true);
+    try {
+      await db.updateTenantSettings(user.tenantId, {
+        name: settingsName,
+        timezone: settingsTimezone,
+        quotas: { equipments: settingsQuotaEq, users: settingsQuotaUsers },
+        security: {
+          minCheckInDelaySeconds: settingsMinDelay || undefined,
+          maxCheckInsPerWindow: settingsMaxCheckins || undefined,
+          rateLimitWindowSeconds: settingsRateWindow || undefined,
+        },
+      });
+      await refreshData();
+      toast('Paramètres enregistrés.');
+    } catch (e: any) { toast(e.message || 'Erreur'); }
+    finally { setSettingsLoading(false); }
+  };
+
   const resetSiteForm = () => { setSiteName(''); setSiteAddress(''); setEditingSite(null); };
 
   const handleSaveSite = async (e: React.FormEvent) => {
@@ -516,6 +555,7 @@ export const ManagementPanel: React.FC<ManagementPanelProps> = ({ user }) => {
               {id: 'qrs', label: 'QR CODES', icon: <QrCode size={14}/>},
               {id: 'sites', label: 'CHANTIERS', icon: <MapPin size={14}/>},
               {id: 'centrales', label: 'CENTRALES', icon: <Droplets size={14}/>},
+              {id: 'settings', label: 'PARAMÈTRES', icon: <Settings2 size={14}/>},
             ].map((t) => (
               <button 
                 key={t.id} 
@@ -1306,6 +1346,83 @@ export const ManagementPanel: React.FC<ManagementPanelProps> = ({ user }) => {
           </div>
         </div>
       )}
+      {activeTab === 'settings' && (
+        <div className="max-w-2xl mx-auto space-y-8 animate-in fade-in">
+          <form onSubmit={handleSaveSettings} className="space-y-8">
+
+            {/* Identité */}
+            <div className="bg-white border rounded-[32px] p-8 shadow-sm">
+              <h3 className="font-black text-sm uppercase tracking-widest mb-6 text-dark flex items-center gap-2"><Settings2 size={16} className="text-primary"/> Identité</h3>
+              <div className="space-y-4">
+                <div>
+                  <label className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-2 block">Nom du tenant</label>
+                  <input value={settingsName} onChange={e => setSettingsName(e.target.value)} placeholder="Clinique exemple" className="w-full p-4 bg-gray-50 border rounded-2xl text-xs font-bold outline-none focus:border-primary"/>
+                </div>
+                <div>
+                  <label className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-2 block">Fuseau horaire</label>
+                  <select value={settingsTimezone} onChange={e => setSettingsTimezone(e.target.value)} className="w-full p-4 bg-gray-50 border rounded-2xl text-xs font-bold outline-none focus:border-primary">
+                    {[
+                      'Pacific/Noumea',
+                      'Pacific/Auckland',
+                      'Pacific/Tahiti',
+                      'Pacific/Port_Moresby',
+                      'Australia/Sydney',
+                      'Australia/Brisbane',
+                      'Asia/Tokyo',
+                      'Europe/Paris',
+                      'UTC',
+                    ].map(tz => <option key={tz} value={tz}>{tz}</option>)}
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            {/* Quotas */}
+            <div className="bg-white border rounded-[32px] p-8 shadow-sm">
+              <h3 className="font-black text-sm uppercase tracking-widest mb-6 text-dark flex items-center gap-2"><Gauge size={16} className="text-primary"/> Quotas</h3>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-2 block">Équipements max</label>
+                  <input type="number" min="1" value={settingsQuotaEq} onChange={e => setSettingsQuotaEq(Number(e.target.value))} className="w-full p-4 bg-gray-50 border rounded-2xl text-xs font-bold outline-none focus:border-primary"/>
+                  <p className="text-[10px] text-gray-400 mt-1 ml-1">Actuellement : {equipments.length} équipement{equipments.length > 1 ? 's' : ''}</p>
+                </div>
+                <div>
+                  <label className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-2 block">Utilisateurs max</label>
+                  <input type="number" min="1" value={settingsQuotaUsers} onChange={e => setSettingsQuotaUsers(Number(e.target.value))} className="w-full p-4 bg-gray-50 border rounded-2xl text-xs font-bold outline-none focus:border-primary"/>
+                  <p className="text-[10px] text-gray-400 mt-1 ml-1">Actuellement : {users.filter(u => !u.isArchived).length} utilisateur{users.filter(u => !u.isArchived).length > 1 ? 's' : ''}</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Sécurité */}
+            <div className="bg-white border rounded-[32px] p-8 shadow-sm">
+              <h3 className="font-black text-sm uppercase tracking-widest mb-6 text-dark flex items-center gap-2"><ShieldCheck size={16} className="text-primary"/> Sécurité emprunts</h3>
+              <p className="text-xs text-gray-400 mb-6">Laisser à 0 pour désactiver le paramètre.</p>
+              <div className="space-y-4">
+                <div>
+                  <label className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-2 block">Délai min. entre 2 scans (secondes)</label>
+                  <input type="number" min="0" value={settingsMinDelay} onChange={e => setSettingsMinDelay(Number(e.target.value))} className="w-full p-4 bg-gray-50 border rounded-2xl text-xs font-bold outline-none focus:border-primary"/>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-2 block">Max scans par fenêtre</label>
+                    <input type="number" min="0" value={settingsMaxCheckins} onChange={e => setSettingsMaxCheckins(Number(e.target.value))} className="w-full p-4 bg-gray-50 border rounded-2xl text-xs font-bold outline-none focus:border-primary"/>
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-2 block">Fenêtre (secondes)</label>
+                    <input type="number" min="0" value={settingsRateWindow} onChange={e => setSettingsRateWindow(Number(e.target.value))} className="w-full p-4 bg-gray-50 border rounded-2xl text-xs font-bold outline-none focus:border-primary"/>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <button type="submit" disabled={settingsLoading} className="w-full py-4 bg-primary text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-xl disabled:opacity-50">
+              {settingsLoading ? 'Enregistrement...' : 'Enregistrer les paramètres'}
+            </button>
+          </form>
+        </div>
+      )}
+
       {dialogNode}
     </div>
   );

@@ -117,6 +117,10 @@ class DatabaseService {
       return await this.call('manageStructure', { action: 'UPDATE_TENANT', tenantId: id, payload: { timezone } });
   }
 
+  async updateTenantSettings(tenantId: string, payload: { name?: string; timezone?: string; quotas?: { equipments: number; users: number }; security?: { minCheckInDelaySeconds?: number; maxCheckInsPerWindow?: number; rateLimitWindowSeconds?: number } }) {
+      return await this.call('manageStructure', { action: 'UPDATE_TENANT', tenantId, payload });
+  }
+
   async createIncidentReport(incidentReport: Omit<IncidentReport, 'id' | 'userNameSnapshot' | 'equipmentNameSnapshot' | 'timestamp' | 'serverTimestamp' | 'status' | 'assignedTo'>, user: User) {
       return await this.call('submitReport', { incidentReport, tenantId: user.tenantId }) as IncidentReport;
   }
