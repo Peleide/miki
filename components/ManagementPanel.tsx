@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import QRCode from 'react-qr-code';
 import { User, Equipment, Tenant, UserRole, WeeklySchedule, DaySchedule, Site, EquipmentType, CdilUnit, VisitSession, VisitEntry } from '../types';
 import { db } from '../services/db';
-import { Plus, QrCode, RefreshCw, Printer, X, Download, User as UserIcon, Cog, Box, Database, Search, Check, ListChecks, MapPin, KeyRound, Power, ClipboardList, Droplets, Loader2 } from 'lucide-react';
+import { Plus, QrCode, RefreshCw, Printer, X, Download, User as UserIcon, Cog, Box, Pencil, Search, Check, ListChecks, MapPin, KeyRound, Power, ClipboardList, Droplets, Loader2 } from 'lucide-react';
 import { Logo } from './Logo';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
@@ -499,7 +499,16 @@ export const ManagementPanel: React.FC<ManagementPanelProps> = ({ user }) => {
       {activeTab === 'equipments' && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
             <div className="lg:col-span-1 border rounded-[32px] bg-white p-8">
-                <h3 className="font-black text-sm uppercase tracking-widest mb-6 text-dark flex gap-2"><Plus size={18} className="text-primary"/> {editingEq ? 'Modifier' : 'Ajouter'}</h3>
+              {editingEq ? (
+                <div className="flex flex-col items-center justify-center h-full py-8 text-center gap-4">
+                  <Pencil size={28} className="text-primary opacity-40"/>
+                  <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">Modification en cours</p>
+                  <p className="text-xs font-medium text-gray-300 max-w-[160px]">Le formulaire est déployé directement sur la carte.</p>
+                  <button onClick={resetEqForm} className="mt-2 px-6 py-3 bg-gray-100 rounded-2xl text-[10px] font-black uppercase text-gray-500 hover:bg-gray-200 transition-all">Annuler</button>
+                </div>
+              ) : (
+              <>
+                <h3 className="font-black text-sm uppercase tracking-widest mb-6 text-dark flex gap-2"><Plus size={18} className="text-primary"/> Ajouter</h3>
                 <form onSubmit={handleSaveEquipment} className="space-y-4">
                     {/* Catégorie */}
                     <div>
@@ -622,10 +631,11 @@ export const ManagementPanel: React.FC<ManagementPanelProps> = ({ user }) => {
                     )}
 
                     <div className="flex gap-2">
-                        {editingEq && <button type="button" onClick={resetEqForm} className="flex-1 py-4 bg-gray-100 rounded-2xl text-[10px] font-black uppercase text-gray-500">Annuler</button>}
                         <button type="submit" disabled={loading} className="flex-[2] py-4 bg-primary text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-xl disabled:opacity-50">Enregistrer</button>
                     </div>
                 </form>
+              </>
+              )}
             </div>
             <div className="lg:col-span-2 space-y-4">
                 <div className="flex flex-col md:flex-row gap-4 mb-4">
@@ -650,11 +660,61 @@ export const ManagementPanel: React.FC<ManagementPanelProps> = ({ user }) => {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {equipments.filter(e => {
                         if (filterType !== 'ALL' && e.type !== filterType) return false;
-                        const matchQ = e.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                                       e.brand.toLowerCase().includes(searchQuery.toLowerCase()) || 
+                        const matchQ = e.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                                       e.brand.toLowerCase().includes(searchQuery.toLowerCase()) ||
                                        (e.serialNumber && e.serialNumber.toLowerCase().includes(searchQuery.toLowerCase()));
                         return matchQ;
                     }).map(eq => (
+                        editingEq?.id === eq.id ? (
+                        <div key={eq.id} className="md:col-span-2 bg-white border-2 border-primary/20 rounded-[24px] shadow-sm p-6">
+                            <div className="flex items-center justify-between mb-5">
+                                <div>
+                                    <p className="text-[10px] font-black uppercase tracking-widest text-primary mb-1">Modification</p>
+                                    <h3 className="font-black text-dark text-base leading-tight">{eq.name}</h3>
+                                </div>
+                                <button type="button" onClick={resetEqForm} className="p-2 text-gray-400 hover:text-dark rounded-xl hover:bg-gray-100 transition-all"><X size={18}/></button>
+                            </div>
+                            <form onSubmit={handleSaveEquipment} className="space-y-4">
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                    <input required placeholder="Nom" value={eqName} onChange={e=>setEqName(e.target.value)} className="w-full p-4 bg-gray-50 border rounded-2xl text-xs font-bold focus:border-primary focus:outline-none"/>
+                                    <select value={eqCategoryCode} onChange={e => {
+                                        const t = equipmentTypes.find(t => t.code === e.target.value);
+                                        setEqCategoryCode(e.target.value); setEqCategory(t?.name || '');
+                                    }} className="w-full p-4 bg-gray-50 border rounded-2xl text-xs font-bold focus:border-primary focus:outline-none">
+                                        <option value="">Catégorie</option>
+                                        {equipmentTypes.map(t => <option key={t.id} value={t.code}>{t.name} ({t.code})</option>)}
+                                    </select>
+                                </div>
+                                <input placeholder="Local de stockage" value={eqStorageLocation} onChange={e=>setEqStorageLocation(e.target.value)} className="w-full p-4 bg-gray-50 border rounded-2xl text-xs font-bold focus:border-primary focus:outline-none"/>
+                                <div className="grid grid-cols-2 gap-4">
+                                    <input placeholder="Marque" value={eqBrand} onChange={e=>setEqBrand(e.target.value)} className="w-full p-4 bg-gray-50 border rounded-2xl text-xs font-bold focus:outline-none"/>
+                                    <input placeholder="Modèle" value={eqModel} onChange={e=>setEqModel(e.target.value)} className="w-full p-4 bg-gray-50 border rounded-2xl text-xs font-bold focus:outline-none"/>
+                                </div>
+                                <div className="grid grid-cols-2 gap-4">
+                                    <input placeholder="Numéro de série" value={eqSerialNumber} onChange={e=>setEqSerialNumber(e.target.value)} className="w-full p-4 bg-gray-50 border rounded-2xl text-xs font-bold focus:outline-none"/>
+                                    <input placeholder="N° de référence" value={eqUniqueId} onChange={e=>setEqUniqueId(e.target.value)} className="w-full p-4 bg-gray-50 border rounded-2xl text-xs font-bold focus:outline-none"/>
+                                </div>
+                                {eq.isBatch && (
+                                    <input type="number" min="0" placeholder="Quantité en stock" value={eqBatchQty} onChange={e=>setEqBatchQty(parseInt(e.target.value)||0)} className="w-full p-4 bg-primary/10 border-primary border rounded-2xl text-xs font-bold text-primary"/>
+                                )}
+                                <textarea placeholder="Consignes d'utilisation..." value={eqInstructions} onChange={e=>setEqInstructions(e.target.value)} className="w-full p-4 bg-gray-50 border rounded-2xl text-xs font-bold resize-none h-20 focus:outline-none"/>
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div className="p-4 border rounded-2xl bg-gray-50">
+                                        <label className="text-[10px] font-black tracking-widest uppercase text-gray-400 mb-2 block">Maintenance (Usages)</label>
+                                        <input type="number" min="1" placeholder="Ex: 50" value={eqUsageLimit} onChange={e=>setEqUsageLimit(e.target.value ? Number(e.target.value) : '')} className="w-full p-2 bg-transparent text-xs font-bold focus:outline-none"/>
+                                    </div>
+                                    <div className="p-4 border rounded-2xl bg-gray-50">
+                                        <label className="text-[10px] font-black tracking-widest uppercase text-gray-400 mb-2 block">Maintenance (Jours)</label>
+                                        <input type="number" min="1" placeholder="Ex: 180" value={eqMaintDays} onChange={e=>setEqMaintDays(e.target.value ? Number(e.target.value) : '')} className="w-full p-2 bg-transparent text-xs font-bold focus:outline-none"/>
+                                    </div>
+                                </div>
+                                <div className="flex gap-3 pt-2">
+                                    <button type="button" onClick={resetEqForm} className="flex-1 py-4 bg-gray-100 rounded-2xl text-[10px] font-black uppercase text-gray-500">Annuler</button>
+                                    <button type="submit" disabled={loading} className="flex-[2] py-4 bg-primary text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-xl disabled:opacity-50">Enregistrer</button>
+                                </div>
+                            </form>
+                        </div>
+                        ) : (
                         <div key={eq.id} className={`p-6 bg-white border rounded-[24px] shadow-sm flex flex-col justify-between ${eq.isArchived ? 'opacity-50 grayscale' : ''}`}>
                             <div>
                                 <div className="flex justify-between items-start mb-2">
@@ -675,11 +735,12 @@ export const ManagementPanel: React.FC<ManagementPanelProps> = ({ user }) => {
                             <div className="flex justify-between items-center mt-6 pt-4 border-t">
                                 <span className="text-[10px] font-bold text-gray-300">Usages: {eq.usageCount}</span>
                                 <div className="flex gap-2">
-                                    <button onClick={() => editEquipment(eq)} className="text-primary hover:bg-primary/10 p-2 rounded-xl transition-all"><Database size={16}/></button>
+                                    {!eq.isArchived && <button onClick={() => editEquipment(eq)} className="text-primary hover:bg-primary/10 p-2 rounded-xl transition-all"><Pencil size={16}/></button>}
                                     {!eq.isArchived && <button onClick={() => checkArchiveEq(eq.id)} className="text-danger hover:bg-red-50 p-2 rounded-xl transition-all"><X size={16}/></button>}
                                 </div>
                             </div>
                         </div>
+                        )
                     ))}
                 </div>
             </div>
@@ -688,7 +749,16 @@ export const ManagementPanel: React.FC<ManagementPanelProps> = ({ user }) => {
       {activeTab === 'checklists' && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
             <div className="lg:col-span-1 border rounded-[32px] bg-white p-8">
-                <h3 className="font-black text-sm uppercase tracking-widest mb-6 text-dark flex gap-2"><Plus size={18} className="text-primary"/> {editingChk ? 'Modifier Checklist' : 'Nouvelle Checklist'}</h3>
+              {editingChk ? (
+                <div className="flex flex-col items-center justify-center h-full py-8 text-center gap-4">
+                  <Pencil size={28} className="text-primary opacity-40"/>
+                  <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">Modification en cours</p>
+                  <p className="text-xs font-medium text-gray-300 max-w-[160px]">Le formulaire est déployé directement sur la carte.</p>
+                  <button onClick={resetChkForm} className="mt-2 px-6 py-3 bg-gray-100 rounded-2xl text-[10px] font-black uppercase text-gray-500 hover:bg-gray-200 transition-all">Annuler</button>
+                </div>
+              ) : (
+              <>
+                <h3 className="font-black text-sm uppercase tracking-widest mb-6 text-dark flex gap-2"><Plus size={18} className="text-primary"/> Nouvelle Checklist</h3>
                 <form onSubmit={handleSaveChecklist} className="space-y-4">
                     <input required placeholder="Nom (Ex: Vérif. Sécurité Perceuse)" value={chkName} onChange={e=>setChkName(e.target.value)} className="w-full p-4 bg-gray-50 border rounded-2xl text-xs font-bold focus:border-primary focus:outline-none"/>
                     
@@ -742,15 +812,73 @@ export const ManagementPanel: React.FC<ManagementPanelProps> = ({ user }) => {
                     </div>
 
                     <div className="flex gap-2 pt-4">
-                        {editingChk && <button type="button" onClick={resetChkForm} className="flex-1 py-4 bg-gray-100 rounded-2xl text-[10px] font-black uppercase text-gray-500">Annuler</button>}
                         <button type="submit" disabled={loading} className="flex-[2] py-4 bg-primary text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-xl disabled:opacity-50">Enregistrer</button>
                     </div>
                 </form>
+              </>
+              )}
             </div>
-            
+
             <div className="lg:col-span-2 space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {checklists.map(c => (
+                        editingChk?.id === c.id ? (
+                        <div key={c.id} className="md:col-span-2 bg-white border-2 border-primary/20 rounded-[24px] shadow-sm p-6">
+                            <div className="flex items-center justify-between mb-5">
+                                <div>
+                                    <p className="text-[10px] font-black uppercase tracking-widest text-primary mb-1">Modification</p>
+                                    <h3 className="font-black text-dark text-base">{c.name}</h3>
+                                </div>
+                                <button type="button" onClick={resetChkForm} className="p-2 text-gray-400 hover:text-dark rounded-xl hover:bg-gray-100 transition-all"><X size={18}/></button>
+                            </div>
+                            <form onSubmit={handleSaveChecklist} className="space-y-4">
+                                <input required placeholder="Nom" value={chkName} onChange={e=>setChkName(e.target.value)} className="w-full p-4 bg-gray-50 border rounded-2xl text-xs font-bold focus:border-primary focus:outline-none"/>
+                                <div className="grid grid-cols-2 gap-4">
+                                    <select value={chkTrigger} onChange={e=>setChkTrigger(e.target.value as any)} className="w-full p-4 bg-gray-50 border rounded-2xl text-xs font-bold focus:border-primary">
+                                        <option value="USE">À la Prise (Agent)</option>
+                                        <option value="MAINTENANCE">À la Résolution (Technicien)</option>
+                                    </select>
+                                    <select value={chkContext} onChange={e=>setChkContext(e.target.value as any)} className="w-full p-4 bg-gray-50 border rounded-2xl text-xs font-bold focus:border-primary">
+                                        <option value="ALL">Tout le parc</option>
+                                        <option value="TYPE">Par Type</option>
+                                        <option value="SPECIFIC">Équipement spécifique</option>
+                                    </select>
+                                </div>
+                                {chkContext !== 'ALL' && (
+                                    <input required placeholder={chkContext === 'TYPE' ? "Type ? (ex: Perceuse)" : "ID équipement"} value={chkValue} onChange={e=>setChkValue(e.target.value)} className="w-full p-4 bg-gray-50 border rounded-2xl text-xs font-bold focus:border-primary focus:outline-none"/>
+                                )}
+                                <div className="pt-2 border-t">
+                                    <div className="flex justify-between items-center mb-2">
+                                        <h4 className="text-[10px] font-black uppercase tracking-widest text-gray-400">Étapes ({chkItems.length})</h4>
+                                    </div>
+                                    {chkItems.map((item, i) => (
+                                        <div key={i} className="mb-3 bg-gray-50 p-2 rounded-xl relative border group focus-within:border-primary">
+                                            <button type="button" onClick={() => setChkItems(chkItems.filter((_,idx)=>idx!==i))} className="absolute -right-2 -top-2 bg-white text-danger border rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity drop-shadow-sm"><X size={12}/></button>
+                                            <input required value={item.label} onChange={e=>{const next=[...chkItems];next[i].label=e.target.value;setChkItems(next);}} placeholder="Question…" className="w-full px-2 py-2 bg-transparent text-xs font-bold focus:outline-none mb-2"/>
+                                            <div className="flex items-center justify-between gap-2 px-2">
+                                                <select value={item.type} onChange={e=>{const next=[...chkItems];next[i].type=e.target.value;setChkItems(next);}} className="bg-white border rounded border-gray-200 text-[10px] font-bold py-1 px-2">
+                                                    <option value="BOOLEAN">OUI/NON</option>
+                                                    <option value="TEXT">Texte</option>
+                                                    <option value="NUMBER">Nombre</option>
+                                                </select>
+                                                {item.type === 'BOOLEAN' && chkTrigger === 'USE' && (
+                                                    <div className="flex items-center gap-1 cursor-pointer" onClick={()=>{const next=[...chkItems];next[i].triggersIncidentIfFalse=!next[i].triggersIncidentIfFalse;setChkItems(next);}}>
+                                                        <input type="checkbox" checked={item.triggersIncidentIfFalse} onChange={()=>{}} className="accent-danger"/>
+                                                        <span className="text-[9px] font-bold text-gray-400 uppercase">BLOQUANT</span>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    ))}
+                                    <button type="button" onClick={()=>setChkItems([...chkItems,{id:'s'+Date.now(),label:'',type:'BOOLEAN',required:true,triggersIncidentIfFalse:false}])} className="w-full py-3 border-2 border-dashed border-gray-200 hover:border-primary/50 rounded-xl text-[10px] font-black tracking-widest uppercase text-gray-400 mt-2 transition-all">+ Ajouter une étape</button>
+                                </div>
+                                <div className="flex gap-3 pt-2">
+                                    <button type="button" onClick={resetChkForm} className="flex-1 py-4 bg-gray-100 rounded-2xl text-[10px] font-black uppercase text-gray-500">Annuler</button>
+                                    <button type="submit" disabled={loading} className="flex-[2] py-4 bg-primary text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-xl disabled:opacity-50">Enregistrer</button>
+                                </div>
+                            </form>
+                        </div>
+                        ) : (
                         <div key={c.id} className={`p-6 bg-white border rounded-[24px] shadow-sm flex flex-col justify-between ${c.isArchived ? 'opacity-50 grayscale' : ''}`}>
                             <div>
                                 <h4 className="font-black text-dark text-lg truncate pr-2">{c.name}</h4>
@@ -773,11 +901,12 @@ export const ManagementPanel: React.FC<ManagementPanelProps> = ({ user }) => {
                             <div className="flex justify-between items-center pt-4 border-t">
                                 <span className="text-[10px] font-bold text-gray-300">{c.items?.length || 0} étapes configurées</span>
                                 <div className="flex gap-2">
-                                    <button onClick={() => editChecklist(c)} className="text-primary hover:bg-primary/10 p-2 rounded-xl transition-all"><Database size={16}/></button>
+                                    {!c.isArchived && <button onClick={() => editChecklist(c)} className="text-primary hover:bg-primary/10 p-2 rounded-xl transition-all"><Pencil size={16}/></button>}
                                     {!c.isArchived && <button onClick={() => checkArchiveChk(c.id)} className="text-danger hover:bg-red-50 p-2 rounded-xl transition-all"><X size={16}/></button>}
                                 </div>
                             </div>
                         </div>
+                        )
                     ))}
                     {checklists.length === 0 && (
                         <div className="col-span-full py-20 bg-gray-50 border-2 border-dashed border-gray-200 rounded-[32px] text-center">
@@ -794,19 +923,46 @@ export const ManagementPanel: React.FC<ManagementPanelProps> = ({ user }) => {
       {activeTab === 'sites' && (
          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
              <div className="lg:col-span-1 border rounded-[32px] bg-white p-8">
-                  <h3 className="font-black text-sm uppercase tracking-widest mb-6 text-dark flex gap-2"><MapPin size={18} className="text-primary"/> {editingSite ? 'Modifier' : 'Nouveau'} Chantier</h3>
+               {editingSite ? (
+                 <div className="flex flex-col items-center justify-center h-full py-8 text-center gap-4">
+                   <Pencil size={28} className="text-primary opacity-40"/>
+                   <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">Modification en cours</p>
+                   <p className="text-xs font-medium text-gray-300 max-w-[160px]">Le formulaire est déployé directement sur la carte.</p>
+                   <button onClick={resetSiteForm} className="mt-2 px-6 py-3 bg-gray-100 rounded-2xl text-[10px] font-black uppercase text-gray-500 hover:bg-gray-200 transition-all">Annuler</button>
+                 </div>
+               ) : (
+               <>
+                  <h3 className="font-black text-sm uppercase tracking-widest mb-6 text-dark flex gap-2"><MapPin size={18} className="text-primary"/> Nouveau Chantier</h3>
                   <form onSubmit={handleSaveSite} className="space-y-4">
                       <input required placeholder="Nom du Chantier" value={siteName} onChange={e=>setSiteName(e.target.value)} className="w-full p-4 bg-gray-50 border rounded-2xl text-xs font-bold outline-none focus:border-primary"/>
                       <textarea placeholder="Adresse / Description" value={siteAddress} onChange={e=>setSiteAddress(e.target.value)} className="w-full p-4 bg-gray-50 border rounded-2xl text-xs font-bold outline-none focus:border-primary resize-none h-24"/>
-                      <div className="flex gap-2">
-                          {editingSite && <button type="button" onClick={resetSiteForm} className="flex-1 py-4 bg-gray-100 rounded-2xl text-[10px] font-black uppercase text-gray-500">Annuler</button>}
-                          <button type="submit" disabled={loading} className="flex-[2] py-4 bg-primary text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-xl disabled:opacity-50">Enregistrer</button>
-                      </div>
+                      <button type="submit" disabled={loading} className="w-full py-4 bg-primary text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-xl disabled:opacity-50">Enregistrer</button>
                   </form>
+               </>
+               )}
              </div>
              <div className="lg:col-span-2">
                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                      {sites.map(s => (
+                         editingSite?.id === s.id ? (
+                         <div key={s.id} className="md:col-span-2 bg-white border-2 border-primary/20 rounded-[24px] p-6 shadow-sm">
+                             <div className="flex items-center justify-between mb-5">
+                                 <div>
+                                     <p className="text-[10px] font-black uppercase tracking-widest text-primary mb-1">Modification</p>
+                                     <h3 className="font-black text-dark text-base flex items-center gap-2"><MapPin size={16} className="text-primary"/> {s.name}</h3>
+                                 </div>
+                                 <button type="button" onClick={resetSiteForm} className="p-2 text-gray-400 hover:text-dark rounded-xl hover:bg-gray-100 transition-all"><X size={18}/></button>
+                             </div>
+                             <form onSubmit={handleSaveSite} className="space-y-4">
+                                 <input required placeholder="Nom du Chantier" value={siteName} onChange={e=>setSiteName(e.target.value)} className="w-full p-4 bg-gray-50 border rounded-2xl text-xs font-bold outline-none focus:border-primary"/>
+                                 <textarea placeholder="Adresse / Description" value={siteAddress} onChange={e=>setSiteAddress(e.target.value)} className="w-full p-4 bg-gray-50 border rounded-2xl text-xs font-bold outline-none focus:border-primary resize-none h-24"/>
+                                 <div className="flex gap-3">
+                                     <button type="button" onClick={resetSiteForm} className="flex-1 py-4 bg-gray-100 rounded-2xl text-[10px] font-black uppercase text-gray-500">Annuler</button>
+                                     <button type="submit" disabled={loading} className="flex-[2] py-4 bg-primary text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-xl disabled:opacity-50">Enregistrer</button>
+                                 </div>
+                             </form>
+                         </div>
+                         ) : (
                          <div key={s.id} className={`bg-white border rounded-[24px] p-6 shadow-sm flex flex-col justify-between ${s.status === 'ARCHIVED' ? 'opacity-50' : ''}`}>
                              <div>
                                  <div className="flex items-center justify-between mb-2">
@@ -819,19 +975,19 @@ export const ManagementPanel: React.FC<ManagementPanelProps> = ({ user }) => {
                                      </span>
                                  </div>
                                  <div className="text-gray-400 font-medium text-xs mb-4">{s.address || 'Aucune adresse spécifiée'}</div>
-                                 
                                  <div className="bg-gray-50 p-3 rounded-xl border">
                                      <div className="text-[10px] font-black text-gray-400 uppercase tracking-widest flex justify-between items-center">
                                         <span>Matériel Emprunté sur site</span>
-                                        <span className="text-dark bg-white shadow-sm border px-2 py-0.5 rounded-md">{equipments.filter(e => e.siteId === s.id && e.status === 'IN_USE').length}</span>
+                                        <span className="text-dark bg-white shadow-sm border px-2 py-0.5 rounded-md">{equipments.filter(e => e.currentSiteId === s.id && e.status === 'IN_USE').length}</span>
                                      </div>
                                  </div>
                              </div>
                              <div className="flex justify-end gap-2 mt-4 pt-4 border-t border-border">
-                                <button onClick={() => editSite(s)} className="text-primary hover:bg-primary/10 p-2 rounded-xl transition-all"><Database size={16}/></button>
+                                {s.status !== 'ARCHIVED' && <button onClick={() => editSite(s)} className="text-primary hover:bg-primary/10 p-2 rounded-xl transition-all"><Pencil size={16}/></button>}
                                 {s.status !== 'ARCHIVED' && <button onClick={() => archiveSite(s.id)} className="text-danger hover:bg-red-50 p-2 rounded-xl transition-all"><X size={16}/></button>}
                              </div>
                          </div>
+                         )
                      ))}
                      {sites.length === 0 && (
                          <div className="col-span-full py-20 bg-gray-50 border-2 border-dashed border-gray-200 rounded-[32px] text-center">
