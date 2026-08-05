@@ -1,13 +1,14 @@
 import { User, UserRole, Equipment, EquipmentLog, Tenant, EquipmentLogAction, AuditLog, IncidentReport, AppNotification, Site, EquipmentType, DEFAULT_EQUIPMENT_TYPES, CdilUnit, VisitSession, VisitEntry, ComponentState } from '../types';
-import { dbFirestore, auth, functions } from './firebaseConfig';
-import { 
-  collection, doc, getDoc, getDocs, query, where, orderBy, limit, Timestamp, onSnapshot, updateDoc 
+import { dbFirestore, auth, functions, storage } from './firebaseConfig';
+import {
+  collection, doc, getDoc, getDocs, query, where, orderBy, limit, Timestamp, onSnapshot, updateDoc
 } from 'firebase/firestore';
-import { 
-  signInWithEmailAndPassword, 
-  updatePassword as firebaseUpdatePassword 
+import {
+  signInWithEmailAndPassword,
+  updatePassword as firebaseUpdatePassword
 } from 'firebase/auth';
 import { httpsCallable } from 'firebase/functions';
+import { ref as storageRef, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 
 export const TimeUtils = {
   formatInTimezone: (ts: any, timezone: string, options: Intl.DateTimeFormatOptions) => {
@@ -406,6 +407,20 @@ class DatabaseService {
 
   async deleteDraftVisitSession(tenantId: string, sessionId: string) {
     return await this.call('manageVisitSession', { action: 'DELETE_DRAFT', tenantId, payload: { sessionId } });
+  }
+
+  async uploadVisitPhoto(tenantId: string, sessionId: string, unitId: string, file: File): Promise<string> {
+    const ext = file.name.split('.').pop() || 'jpg';
+    const uniqueSuffix = `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    const path = `tenants/${tenantId}/visitSessions/${sessionId}/${unitId}/${uniqueSuffix}.${ext}`;
+    const fileRef = storageRef(storage, path);
+    await uploadBytes(fileRef, file);
+    return await getDownloadURL(fileRef);
+  }
+
+  async deleteVisitPhoto(url: string): Promise<void> {
+    const fileRef = storageRef(storage, url);
+    await deleteObject(fileRef);
   }
 
   async getTenantsForUser(user: User): Promise<Tenant[]> {

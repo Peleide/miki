@@ -2,6 +2,7 @@ import { initializeApp } from 'firebase/app';
 import { getFirestore, connectFirestoreEmulator } from 'firebase/firestore';
 import { getAuth, connectAuthEmulator } from 'firebase/auth';
 import { getFunctions, connectFunctionsEmulator } from 'firebase/functions';
+import { getStorage, connectStorageEmulator } from 'firebase/storage';
 
 const firebaseConfig = {
   apiKey: "AIzaSyD-wLZGnHMKkD4vexmPPnlSYMngVz4Pcfg",
@@ -16,6 +17,7 @@ const app = initializeApp(firebaseConfig);
 
 export const dbFirestore = getFirestore(app);
 export const auth = getAuth(app);
+export const storage = getStorage(app);
 
 // IMPORTANT: Doit correspondre à la région déployée (australia-southeast1)
 export const functions = getFunctions(app, 'australia-southeast1');
@@ -25,5 +27,6 @@ if (import.meta.env.DEV) {
   connectFirestoreEmulator(dbFirestore, 'localhost', 8080);
   connectAuthEmulator(auth, 'http://localhost:9099', { disableWarnings: true });
   connectFunctionsEmulator(functions, 'localhost', 5001);
-  console.info('[MIKI] Mode émulateur activé (Firestore:8080 | Auth:9099 | Functions:5001)');
+  connectStorageEmulator(storage, 'localhost', 9199);
+  console.info('[MIKI] Mode émulateur activé (Firestore:8080 | Auth:9099 | Functions:5001 | Storage:9199)');
 }

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { User, CdilUnit, VisitSession, VisitEntry, ComponentState } from '../types';
 import { db } from '../services/db';
-import { Plus, ChevronLeft, Save, CheckCircle, Download, ClipboardList, Loader2, Trash2, Zap, CalendarDays } from 'lucide-react';
+import { Plus, ChevronLeft, Save, CheckCircle, Download, ClipboardList, Loader2, Trash2, Zap, CalendarDays, Camera, X } from 'lucide-react';
 import { useDialog } from '../hooks/useDialog';
 
 interface CdilVisitPanelProps {
@@ -62,6 +62,9 @@ export const CdilVisitPanel: React.FC<CdilVisitPanelProps> = ({ user }) => {
   const [newSessionType, setNewSessionType] = useState<'PERIODIQUE' | 'INTERVENTION'>('PERIODIQUE');
   const [availableUnits, setAvailableUnits] = useState<CdilUnit[]>([]);
   const [selectedUnitIds, setSelectedUnitIds] = useState<string[]>([]);
+
+  const [photoModal, setPhotoModal] = useState<number | null>(null);
+  const [uploadingPhotoIdx, setUploadingPhotoIdx] = useState<number | null>(null);
 
   useEffect(() => { loadSessions(); }, [user.tenantId]);
 
@@ -126,6 +129,50 @@ export const CdilVisitPanel: React.FC<CdilVisitPanelProps> = ({ user }) => {
       next[idx] = { ...next[idx], [field]: value };
       return next;
     });
+  };
+
+  const addPhotoToEntry = (idx: number, url: string) => {
+    setEntries(prev => {
+      const next = [...prev];
+      next[idx] = { ...next[idx], photos: [...(next[idx].photos || []), url] };
+      return next;
+    });
+  };
+
+  const removePhotoFromEntry = (idx: number, url: string) => {
+    setEntries(prev => {
+      const next = [...prev];
+      next[idx] = { ...next[idx], photos: (next[idx].photos || []).filter(p => p !== url) };
+      return next;
+    });
+  };
+
+  const handlePhotoUpload = async (idx: number, e: React.ChangeEvent<HTMLInputElement>) => {
+    const files: File[] = e.target.files ? Array.from(e.target.files) : [];
+    if (!files.length || !activeSession) return;
+    setUploadingPhotoIdx(idx);
+    try {
+      const urls = await Promise.all(
+        files.map(f => db.uploadVisitPhoto(user.tenantId, activeSession.id, entries[idx].unitId, f))
+      );
+      urls.forEach(url => addPhotoToEntry(idx, url));
+    } catch (err: any) {
+      toast(err.message || 'Erreur lors du téléchargement');
+    } finally {
+      setUploadingPhotoIdx(null);
+      e.target.value = '';
+    }
+  };
+
+  const handleDeletePhoto = async (idx: number, url: string) => {
+    const ok = await confirm({ title: 'Supprimer la photo', message: 'Cette photo sera supprimée définitivement.', confirmLabel: 'Supprimer', variant: 'danger' });
+    if (!ok) return;
+    try {
+      await db.deleteVisitPhoto(url);
+      removePhotoFromEntry(idx, url);
+    } catch (err: any) {
+      toast(err.message || 'Erreur lors de la suppression');
+    }
   };
 
   const handleSave = async () => {
@@ -208,16 +255,16 @@ export const CdilVisitPanel: React.FC<CdilVisitPanelProps> = ({ user }) => {
         </div>
 
         {/* Grille de saisie */}
-        <div className="bg-white border border-border rounded-[32px] overflow-hidden shadow-sm">
+        <div className="bg-white border border-border rounded-[32px] overflow-hidden shadow-sm overflow-x-auto">
           {/* En-tête */}
-          <div className="grid grid-cols-[1fr_120px_120px_120px_200px] gap-0 bg-gray-50 border-b border-border">
-            {['Localisation / Service', 'Buse', 'Crépine', 'Ligne asp.', 'Remarques'].map(h => (
+          <div className="grid grid-cols-[1fr_100px_100px_100px_160px_80px] gap-0 bg-gray-50 border-b border-border min-w-[700px]">
+            {['Localisation / Service', 'Buse', 'Crépine', 'Ligne asp.', 'Remarques', 'Photos'].map(h => (
               <div key={h} className="px-4 py-4 text-[10px] font-black text-gray-400 uppercase tracking-widest">{h}</div>
             ))}
           </div>
 
           {entries.map((entry, idx) => (
-            <div key={entry.unitId || idx} className={`grid grid-cols-[1fr_120px_120px_120px_200px] gap-0 border-b border-gray-50 hover:bg-primary/[0.02] transition-colors ${idx % 2 === 0 ? '' : 'bg-gray-50/30'}`}>
+            <div key={entry.unitId || idx} className={`grid grid-cols-[1fr_100px_100px_100px_160px_80px] gap-0 border-b border-gray-50 hover:bg-primary/[0.02] transition-colors min-w-[700px] ${idx % 2 === 0 ? '' : 'bg-gray-50/30'}`}>
               {/* Localisation */}
               <div className="px-4 py-4">
                 <div className="font-black text-dark text-sm leading-none mb-1">{entry.location}</div>
@@ -273,6 +320,25 @@ export const CdilVisitPanel: React.FC<CdilVisitPanelProps> = ({ user }) => {
                   className="w-full text-xs font-medium border border-gray-200 rounded-xl px-3 py-2 outline-none focus:border-primary bg-white"
                 />
               </div>
+
+              {/* Photos */}
+              <div className="px-2 py-3 flex items-center justify-center">
+                <button
+                  onClick={() => setPhotoModal(idx)}
+                  className="relative flex items-center justify-center gap-1.5 px-2.5 py-2 rounded-xl border border-gray-200 hover:border-primary hover:bg-primary/5 transition-all text-gray-400 hover:text-primary"
+                  title="Gérer les photos"
+                >
+                  {uploadingPhotoIdx === idx
+                    ? <Loader2 size={14} className="animate-spin text-primary"/>
+                    : <Camera size={14}/>
+                  }
+                  {(entry.photos?.length || 0) > 0 && (
+                    <span className="absolute -top-1.5 -right-1.5 text-[8px] font-black bg-primary text-white rounded-full w-4 h-4 flex items-center justify-center">
+                      {entry.photos!.length}
+                    </span>
+                  )}
+                </button>
+              </div>
             </div>
           ))}
 
@@ -282,6 +348,58 @@ export const CdilVisitPanel: React.FC<CdilVisitPanelProps> = ({ user }) => {
             </div>
           )}
         </div>
+
+        {/* Modale photos */}
+        {photoModal !== null && entries[photoModal] && (
+          <div className="fixed inset-0 z-[500] bg-black/50 flex items-center justify-center p-4" onClick={() => setPhotoModal(null)}>
+            <div className="bg-white rounded-[32px] p-6 max-w-md w-full shadow-2xl" onClick={e => e.stopPropagation()}>
+              <div className="flex items-center justify-between mb-5">
+                <div>
+                  <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-0.5">Photos</p>
+                  <h3 className="font-black text-dark text-base leading-none">{entries[photoModal].location}</h3>
+                </div>
+                <button onClick={() => setPhotoModal(null)} className="p-2 text-gray-400 hover:text-dark rounded-xl hover:bg-gray-100 transition-all">
+                  <X size={18}/>
+                </button>
+              </div>
+
+              <div className="grid grid-cols-3 gap-3 mb-5">
+                {(entries[photoModal].photos || []).map((url, pi) => (
+                  <div key={pi} className="relative aspect-square rounded-2xl overflow-hidden group border border-gray-100">
+                    <img src={url} alt={`Photo ${pi + 1}`} className="w-full h-full object-cover"/>
+                    <button
+                      onClick={() => handleDeletePhoto(photoModal, url)}
+                      className="absolute top-1.5 right-1.5 p-1 bg-white/90 text-danger rounded-lg opacity-0 group-hover:opacity-100 transition-opacity shadow-sm"
+                    >
+                      <X size={11}/>
+                    </button>
+                  </div>
+                ))}
+
+                {/* Bouton ajout */}
+                <label className={`aspect-square rounded-2xl border-2 border-dashed flex flex-col items-center justify-center cursor-pointer transition-all ${uploadingPhotoIdx === photoModal ? 'border-primary/30 bg-primary/5' : 'border-gray-200 hover:border-primary hover:bg-primary/5'}`}>
+                  {uploadingPhotoIdx === photoModal
+                    ? <Loader2 size={22} className="animate-spin text-primary"/>
+                    : <Camera size={22} className="text-gray-300 mb-1"/>
+                  }
+                  <span className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Ajouter</span>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    className="hidden"
+                    disabled={uploadingPhotoIdx !== null}
+                    onChange={e => handlePhotoUpload(photoModal, e)}
+                  />
+                </label>
+              </div>
+
+              <button onClick={() => setPhotoModal(null)} className="w-full py-3 bg-gray-100 rounded-2xl text-[10px] font-black uppercase tracking-widest text-gray-500 hover:bg-gray-200 transition-all">
+                Fermer
+              </button>
+            </div>
+          </div>
+        )}
 
         <div className="flex justify-end gap-3 mt-6">
           <button onClick={handleSave} disabled={saving} className="flex items-center gap-2 px-8 py-4 bg-gray-100 text-dark rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-gray-200 transition-all disabled:opacity-50">
