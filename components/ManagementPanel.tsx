@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import QRCode from 'react-qr-code';
 import { User, Equipment, Tenant, UserRole, WeeklySchedule, DaySchedule, Site, EquipmentType, CdilUnit, VisitSession, VisitEntry } from '../types';
 import { db } from '../services/db';
-import { Plus, QrCode, RefreshCw, Printer, X, Download, User as UserIcon, Box, Pencil, Search, Check, ListChecks, MapPin, KeyRound, Power, ClipboardList, Droplets, Loader2 } from 'lucide-react';
+import { Plus, QrCode, RefreshCw, Printer, X, Download, User as UserIcon, Box, Pencil, Search, Check, ListChecks, MapPin, KeyRound, Power, ClipboardList, Droplets, Loader2, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Logo } from './Logo';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
@@ -77,6 +77,7 @@ export const ManagementPanel: React.FC<ManagementPanelProps> = ({ user }) => {
   const [cdilService, setCdilService] = useState('');
   const [cdilRoomCode, setCdilRoomCode] = useState('');
   const [cdilNotes, setCdilNotes] = useState('');
+  const [editingCdilUnit, setEditingCdilUnit] = useState<CdilUnit | null>(null);
 
   // Checklists
   const [chkName, setChkName] = useState('');
@@ -88,6 +89,13 @@ export const ManagementPanel: React.FC<ManagementPanelProps> = ({ user }) => {
 
   const [searchQuery, setSearchQuery] = useState('');
   const [filterType, setFilterType] = useState('ALL');
+  const [eqPage, setEqPage] = useState(1);
+  const [usersPage, setUsersPage] = useState(1);
+  const EQ_PAGE_SIZE = 12;
+  const USERS_PAGE_SIZE = 12;
+
+  useEffect(() => { setEqPage(1); }, [searchQuery, filterType, showArchived]);
+  useEffect(() => { setUsersPage(1); }, [showArchived]);
 
   useEffect(() => { refreshData(); }, [user, showArchived, activeTab]);
 
@@ -278,6 +286,35 @@ export const ManagementPanel: React.FC<ManagementPanelProps> = ({ user }) => {
         service: cdilService, roomCode: cdilRoomCode, notes: cdilNotes,
       });
       setCdilSerial(''); setCdilLocation(''); setCdilService(''); setCdilRoomCode(''); setCdilNotes('');
+      await refreshCdilData();
+    } catch (e: any) { toast(e.message || 'Erreur'); }
+    finally { setCdilLoading(false); }
+  };
+
+  const editCdilUnit = (unit: CdilUnit) => {
+    setEditingCdilUnit(unit);
+    setCdilSerial(unit.serialNumber);
+    setCdilLocation(unit.location);
+    setCdilService(unit.service);
+    setCdilRoomCode(unit.roomCode || '');
+    setCdilNotes(unit.notes || '');
+  };
+
+  const cancelEditCdilUnit = () => {
+    setEditingCdilUnit(null);
+    setCdilSerial(''); setCdilLocation(''); setCdilService(''); setCdilRoomCode(''); setCdilNotes('');
+  };
+
+  const handleUpdateCdilUnit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingCdilUnit) return;
+    setCdilLoading(true);
+    try {
+      await db.updateCdilUnit(user.tenantId, editingCdilUnit.id, {
+        serialNumber: cdilSerial, location: cdilLocation,
+        service: cdilService, roomCode: cdilRoomCode, notes: cdilNotes,
+      });
+      cancelEditCdilUnit();
       await refreshCdilData();
     } catch (e: any) { toast(e.message || 'Erreur'); }
     finally { setCdilLoading(false); }
@@ -658,14 +695,18 @@ export const ManagementPanel: React.FC<ManagementPanelProps> = ({ user }) => {
                         {Array.from(new Set(equipments.map(e => e.type).filter(Boolean))).map(t => <option key={t} value={t}>{t}</option>)}
                     </select>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {equipments.filter(e => {
+                {(() => {
+                    const filteredEqs = equipments.filter(e => {
                         if (filterType !== 'ALL' && e.type !== filterType) return false;
-                        const matchQ = e.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                                       e.brand.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                                       (e.serialNumber && e.serialNumber.toLowerCase().includes(searchQuery.toLowerCase()));
-                        return matchQ;
-                    }).map(eq => (
+                        return e.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                               e.brand.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                               (e.serialNumber && e.serialNumber.toLowerCase().includes(searchQuery.toLowerCase()));
+                    });
+                    const eqTotalPages = Math.ceil(filteredEqs.length / EQ_PAGE_SIZE);
+                    const displayEqs = editingEq ? filteredEqs : filteredEqs.slice((eqPage - 1) * EQ_PAGE_SIZE, eqPage * EQ_PAGE_SIZE);
+                    return (<>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {displayEqs.map(eq => (
                         editingEq?.id === eq.id ? (
                         <div key={eq.id} className="md:col-span-2 bg-white border-2 border-primary/20 rounded-[24px] shadow-sm p-6">
                             <div className="flex items-center justify-between mb-5">
@@ -721,7 +762,7 @@ export const ManagementPanel: React.FC<ManagementPanelProps> = ({ user }) => {
                                 <div className="flex justify-between items-start mb-2">
                                     <h4 className="font-black text-dark text-lg truncate pr-2">{eq.name}</h4>
                                     <span className={`text-[9px] font-black px-2 py-1 rounded-lg uppercase tracking-widest shrink-0 ${eq.status === 'AVAILABLE' ? 'bg-success/10 text-success' : eq.status === 'IN_USE' ? 'bg-orange-100 text-orange-600' : 'bg-danger/10 text-danger'}`}>
-                                        {eq.status === 'AVAILABLE' ? 'DISPO' : eq.status === 'IN_USE' ? 'EMPRUNTÉ' : 'MAINTENANCE'}
+                                        {eq.status === 'AVAILABLE' ? 'DISPO' : eq.status === 'IN_USE' ? 'EMPRUNTÉ' : 'MAINT.'}
                                     </span>
                                 </div>
                                 <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-1">{eq.brand} {eq.model}</p>
@@ -744,6 +785,17 @@ export const ManagementPanel: React.FC<ManagementPanelProps> = ({ user }) => {
                         )
                     ))}
                 </div>
+                {!editingEq && eqTotalPages > 1 && (
+                    <div className="flex items-center justify-between mt-4 px-1">
+                        <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">{filteredEqs.length} équipements</span>
+                        <div className="flex items-center gap-2">
+                            <button onClick={() => setEqPage(p => Math.max(1, p - 1))} disabled={eqPage === 1} className="p-2 rounded-xl hover:bg-gray-100 disabled:opacity-30 transition-all"><ChevronLeft size={15}/></button>
+                            <span className="text-[10px] font-black tabular-nums text-dark">{eqPage} / {eqTotalPages}</span>
+                            <button onClick={() => setEqPage(p => Math.min(eqTotalPages, p + 1))} disabled={eqPage === eqTotalPages} className="p-2 rounded-xl hover:bg-gray-100 disabled:opacity-30 transition-all"><ChevronRight size={15}/></button>
+                        </div>
+                    </div>
+                )}
+                </>); })()}
             </div>
         </div>
       )}
@@ -1035,8 +1087,13 @@ export const ManagementPanel: React.FC<ManagementPanelProps> = ({ user }) => {
                          <button onClick={() => setResetPwdResult(null)} className="w-full mt-4 bg-white text-primary py-3 rounded-xl font-black text-[10px] uppercase">Fermer</button>
                      </div>
                  )}
+                 {(() => {
+                     const filteredUsers = users.filter(u => showArchived ? true : !u.isArchived);
+                     const usersTotalPages = Math.ceil(filteredUsers.length / USERS_PAGE_SIZE);
+                     const displayUsers = filteredUsers.slice((usersPage - 1) * USERS_PAGE_SIZE, usersPage * USERS_PAGE_SIZE);
+                     return (<>
                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                     {users.filter(u => showArchived ? true : !u.isArchived).map(u => (
+                     {displayUsers.map(u => (
                          <div key={u.id} className={`bg-white border rounded-[24px] p-6 shadow-sm ${u.isArchived ? 'opacity-50 grayscale' : ''} ${u.isDisabled ? 'border-orange-200' : ''}`}>
                              <div className="flex justify-between items-start mb-4">
                                  <div>
@@ -1075,6 +1132,17 @@ export const ManagementPanel: React.FC<ManagementPanelProps> = ({ user }) => {
                          </div>
                      ))}
                  </div>
+                 {usersTotalPages > 1 && (
+                     <div className="flex items-center justify-between mt-4 px-1">
+                         <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">{filteredUsers.length} utilisateurs</span>
+                         <div className="flex items-center gap-2">
+                             <button onClick={() => setUsersPage(p => Math.max(1, p - 1))} disabled={usersPage === 1} className="p-2 rounded-xl hover:bg-gray-100 disabled:opacity-30 transition-all"><ChevronLeft size={15}/></button>
+                             <span className="text-[10px] font-black tabular-nums text-dark">{usersPage} / {usersTotalPages}</span>
+                             <button onClick={() => setUsersPage(p => Math.min(usersTotalPages, p + 1))} disabled={usersPage === usersTotalPages} className="p-2 rounded-xl hover:bg-gray-100 disabled:opacity-30 transition-all"><ChevronRight size={15}/></button>
+                         </div>
+                     </div>
+                 )}
+                 </>); })()}
              </div>
          </div>
       )}
@@ -1092,21 +1160,32 @@ export const ManagementPanel: React.FC<ManagementPanelProps> = ({ user }) => {
 
       {activeTab === 'centrales' && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* Formulaire ajout unité */}
+          {/* Formulaire ajout / placeholder modification */}
           <div className="lg:col-span-1 border rounded-[32px] bg-white p-8">
-            <h3 className="font-black text-sm uppercase tracking-widest mb-6 text-dark flex gap-2"><Plus size={18} className="text-primary"/> Ajouter une Unité CDil</h3>
-            <form onSubmit={handleCreateCdilUnit} className="space-y-4">
-              <input required placeholder="N° de série (ex: 4839)" value={cdilSerial} onChange={e=>setCdilSerial(e.target.value)} className="w-full p-4 bg-gray-50 border rounded-2xl text-xs font-bold outline-none focus:border-primary"/>
-              <input required placeholder="Localisation complète (ex: Oncologie B26)" value={cdilLocation} onChange={e=>setCdilLocation(e.target.value)} className="w-full p-4 bg-gray-50 border rounded-2xl text-xs font-bold outline-none focus:border-primary"/>
-              <div className="grid grid-cols-2 gap-3">
-                <input required placeholder="Service (ex: Oncologie)" value={cdilService} onChange={e=>setCdilService(e.target.value)} className="w-full p-4 bg-gray-50 border rounded-2xl text-xs font-bold outline-none focus:border-primary"/>
-                <input placeholder="Code salle (ex: B26)" value={cdilRoomCode} onChange={e=>setCdilRoomCode(e.target.value)} className="w-full p-4 bg-gray-50 border rounded-2xl text-xs font-bold outline-none focus:border-primary"/>
+            {editingCdilUnit ? (
+              <div className="flex flex-col items-center justify-center h-full py-8 text-center gap-4">
+                <Pencil size={28} className="text-primary opacity-40"/>
+                <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">Modification en cours</p>
+                <p className="text-xs font-medium text-gray-300 max-w-[160px]">Le formulaire est déployé directement sur la carte.</p>
+                <button onClick={cancelEditCdilUnit} className="mt-2 px-6 py-3 bg-gray-100 rounded-2xl text-[10px] font-black uppercase text-gray-500 hover:bg-gray-200 transition-all">Annuler</button>
               </div>
-              <textarea placeholder="Notes..." value={cdilNotes} onChange={e=>setCdilNotes(e.target.value)} className="w-full p-4 bg-gray-50 border rounded-2xl text-xs font-bold outline-none focus:border-primary resize-none h-20"/>
-              <button type="submit" disabled={cdilLoading} className="w-full py-4 bg-primary text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-xl disabled:opacity-50">
-                {cdilLoading ? 'Enregistrement...' : 'Ajouter l\'unité'}
-              </button>
-            </form>
+            ) : (
+              <>
+                <h3 className="font-black text-sm uppercase tracking-widest mb-6 text-dark flex gap-2"><Plus size={18} className="text-primary"/> Ajouter une Unité CDil</h3>
+                <form onSubmit={handleCreateCdilUnit} className="space-y-4">
+                  <input required placeholder="N° de série (ex: 4839)" value={cdilSerial} onChange={e=>setCdilSerial(e.target.value)} className="w-full p-4 bg-gray-50 border rounded-2xl text-xs font-bold outline-none focus:border-primary"/>
+                  <input required placeholder="Localisation complète (ex: Oncologie B26)" value={cdilLocation} onChange={e=>setCdilLocation(e.target.value)} className="w-full p-4 bg-gray-50 border rounded-2xl text-xs font-bold outline-none focus:border-primary"/>
+                  <div className="grid grid-cols-2 gap-3">
+                    <input required placeholder="Service (ex: Oncologie)" value={cdilService} onChange={e=>setCdilService(e.target.value)} className="w-full p-4 bg-gray-50 border rounded-2xl text-xs font-bold outline-none focus:border-primary"/>
+                    <input placeholder="Code salle (ex: B26)" value={cdilRoomCode} onChange={e=>setCdilRoomCode(e.target.value)} className="w-full p-4 bg-gray-50 border rounded-2xl text-xs font-bold outline-none focus:border-primary"/>
+                  </div>
+                  <textarea placeholder="Notes..." value={cdilNotes} onChange={e=>setCdilNotes(e.target.value)} className="w-full p-4 bg-gray-50 border rounded-2xl text-xs font-bold outline-none focus:border-primary resize-none h-20"/>
+                  <button type="submit" disabled={cdilLoading} className="w-full py-4 bg-primary text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-xl disabled:opacity-50">
+                    {cdilLoading ? 'Enregistrement...' : 'Ajouter l\'unité'}
+                  </button>
+                </form>
+              </>
+            )}
           </div>
 
           {/* Liste unités + historique sessions */}
@@ -1121,6 +1200,30 @@ export const ManagementPanel: React.FC<ManagementPanelProps> = ({ user }) => {
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {cdilUnits.map(unit => (
+                    editingCdilUnit?.id === unit.id ? (
+                    <div key={unit.id} className="md:col-span-2 bg-white border-2 border-primary/20 rounded-[24px] shadow-sm p-6">
+                      <div className="flex items-center justify-between mb-5">
+                        <div>
+                          <p className="text-[10px] font-black uppercase tracking-widest text-primary mb-1">Modification</p>
+                          <h3 className="font-black text-dark text-base leading-tight">{unit.location}</h3>
+                        </div>
+                        <button type="button" onClick={cancelEditCdilUnit} className="p-2 text-gray-400 hover:text-dark rounded-xl hover:bg-gray-100 transition-all"><X size={18}/></button>
+                      </div>
+                      <form onSubmit={handleUpdateCdilUnit} className="space-y-4">
+                        <input required placeholder="N° de série" value={cdilSerial} onChange={e=>setCdilSerial(e.target.value)} className="w-full p-4 bg-gray-50 border rounded-2xl text-xs font-bold outline-none focus:border-primary"/>
+                        <input required placeholder="Localisation complète" value={cdilLocation} onChange={e=>setCdilLocation(e.target.value)} className="w-full p-4 bg-gray-50 border rounded-2xl text-xs font-bold outline-none focus:border-primary"/>
+                        <div className="grid grid-cols-2 gap-3">
+                          <input required placeholder="Service" value={cdilService} onChange={e=>setCdilService(e.target.value)} className="w-full p-4 bg-gray-50 border rounded-2xl text-xs font-bold outline-none focus:border-primary"/>
+                          <input placeholder="Code salle" value={cdilRoomCode} onChange={e=>setCdilRoomCode(e.target.value)} className="w-full p-4 bg-gray-50 border rounded-2xl text-xs font-bold outline-none focus:border-primary"/>
+                        </div>
+                        <textarea placeholder="Notes..." value={cdilNotes} onChange={e=>setCdilNotes(e.target.value)} className="w-full p-4 bg-gray-50 border rounded-2xl text-xs font-bold outline-none focus:border-primary resize-none h-20"/>
+                        <div className="flex gap-3 pt-2">
+                          <button type="button" onClick={cancelEditCdilUnit} className="flex-1 py-4 bg-gray-100 rounded-2xl text-[10px] font-black uppercase text-gray-500">Annuler</button>
+                          <button type="submit" disabled={cdilLoading} className="flex-[2] py-4 bg-primary text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-xl disabled:opacity-50">Enregistrer</button>
+                        </div>
+                      </form>
+                    </div>
+                    ) : (
                     <div key={unit.id} className="bg-white border rounded-[24px] p-5 shadow-sm flex flex-col justify-between">
                       <div>
                         <div className="flex justify-between items-start mb-2">
@@ -1141,12 +1244,16 @@ export const ManagementPanel: React.FC<ManagementPanelProps> = ({ user }) => {
                           <div className="text-[10px] font-bold text-gray-300 mt-1">Dernière visite: {new Date(unit.lastVisitDate).toLocaleDateString('fr-FR')}</div>
                         )}
                       </div>
-                      <div className="flex justify-end pt-3 mt-3 border-t border-border">
+                      <div className="flex justify-end gap-2 pt-3 mt-3 border-t border-border">
+                        <button onClick={() => editCdilUnit(unit)} className="text-gray-400 hover:text-primary hover:bg-primary/5 p-2 rounded-xl transition-all" title="Modifier">
+                          <Pencil size={15}/>
+                        </button>
                         <button onClick={() => handleDeactivateCdilUnit(unit.id)} className="text-danger hover:bg-red-50 p-2 rounded-xl transition-all" title="Désactiver">
                           <X size={16}/>
                         </button>
                       </div>
                     </div>
+                    )
                   ))}
                   {cdilUnits.length === 0 && (
                     <div className="col-span-full py-16 bg-gray-50 border-2 border-dashed border-gray-200 rounded-[32px] text-center">
@@ -1166,9 +1273,14 @@ export const ManagementPanel: React.FC<ManagementPanelProps> = ({ user }) => {
               <div className="space-y-3">
                 {cdilSessions.filter(s => s.status === 'COMPLETED').map(session => (
                   <div key={session.id} className="bg-white border rounded-[24px] p-5 shadow-sm flex items-center justify-between gap-4">
-                    <div className="min-w-0">
-                      <div className="font-black text-dark text-sm truncate">{session.title}</div>
-                      <div className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-0.5">
+                    <div className="min-w-0flex-1">
+                      <div className="flex items-center gap-2 mb-1">
+                        <div className="font-black text-dark text-sm truncate">{session.title}</div>
+                        <span className={`shrink-0 text-[9px] font-black px-2 py-0.5 rounded-md uppercase tracking-widest ${session.sessionType === 'INTERVENTION' ? 'bg-orange-50 text-orange-600 border border-orange-200' : 'bg-primary/10 text-primary border border-primary/20'}`}>
+                          {session.sessionType === 'INTERVENTION' ? 'Intervention' : 'Périodique'}
+                        </span>
+                      </div>
+                      <div className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">
                         {new Date(session.date).toLocaleDateString('fr-FR', { day:'2-digit', month:'long', year:'numeric' })}
                         {' · '}{session.technicianName}
                         {' · '}{session.entries.length} unité{session.entries.length > 1 ? 's' : ''}

@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useMemo } from 'react';
-import { User, EquipmentLog, Equipment, UserRole, Tenant, IncidentReport, DEFAULT_EQUIPMENT_TYPES } from '../types';
+import { User, EquipmentLog, Equipment, UserRole, Tenant, IncidentReport, DEFAULT_EQUIPMENT_TYPES, CdilUnit } from '../types';
 import { db, TimeUtils } from '../services/db';
-import { Download, Filter, Search, Calendar, ChevronLeft, ChevronRight, Activity, MessageSquare, AlertTriangle, Inbox, CheckSquare, Zap, Clock, ShieldCheck, Database, RefreshCw, TrendingUp, PieChart, Info, Settings2, Box, ArrowLeft, ClipboardList } from 'lucide-react';
+import { Download, Filter, Search, Calendar, ChevronLeft, ChevronRight, Activity, MessageSquare, AlertTriangle, Inbox, CheckSquare, Zap, Clock, ShieldCheck, Database, RefreshCw, TrendingUp, PieChart, Info, Settings2, Box, ArrowLeft, ClipboardList, Droplets } from 'lucide-react';
 import { useDialog } from '../hooks/useDialog';
 
 interface DashboardProps {
@@ -14,6 +14,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ user }) => {
   const [selectedEquipment, setSelectedEquipment] = useState<Equipment | null>(null);
   const [reportStatusFilter, setReportStatusFilter] = useState<'OPEN' | 'ARCHIVED'>('OPEN');
   const [categoryFilter, setCategoryFilter] = useState<string>('ALL');
+  const [statusFilter, setStatusFilter] = useState<string>('ALL');
+
+  const eqStatusLabel = (status: string, short = false) =>
+    status === 'AVAILABLE' ? (short ? 'DISPO' : 'Disponible') :
+    status === 'IN_USE'    ? (short ? 'EMPRUNTÉ' : 'Emprunté') :
+    status === 'MAINTENANCE' ? (short ? 'MAINT.' : 'Maintenance') : status;
   
   const todayStr = new Date().toISOString().slice(0, 10);
   const [filterStartDate, setFilterStartDate] = useState(todayStr); 
@@ -26,6 +32,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ user }) => {
   const [currentTenant, setCurrentTenant] = useState<Tenant | null>(null);
   const [maintenanceLogs, setMaintenanceLogs] = useState<any[]>([]);
   const [checklists, setChecklists] = useState<any[]>([]);
+  const [cdilUnits, setCdilUnits] = useState<CdilUnit[]>([]);
   
   const [isLoading, setIsLoading] = useState(false);
   const isManager = user.role === UserRole.MANAGER || user.role === UserRole.ADMIN;
@@ -45,23 +52,25 @@ export const Dashboard: React.FC<DashboardProps> = ({ user }) => {
             range = { start: addDays(filterStartDate, -1), end: addDays(filterEndDate, 1) };
         }
 
-        const [l, eq, u, t, rep, mLogs, chks] = await Promise.all([
+        const [l, eq, u, t, rep, mLogs, chks, cdil] = await Promise.all([
             db.getEquipmentLogs(user.tenantId, user.role, 500, range),
             db.getEquipments(user.tenantId),
             isClient ? Promise.resolve([]) : db.getUsers(user.tenantId),
             db.getTenant(user.tenantId),
             db.getIncidentReports(user.tenantId, reportStatusFilter),
             db.getMaintenanceLogs(user.tenantId),
-            db.getChecklists(user.tenantId)
+            db.getChecklists(user.tenantId),
+            db.getCdilUnits(user.tenantId)
         ]);
-        
-        setLogs(l); 
-        setEquipments(eq as any[]); 
-        setTenantUsers(u); 
+
+        setLogs(l);
+        setEquipments(eq as any[]);
+        setTenantUsers(u);
         setCurrentTenant(t || null);
         setReports(rep);
         setMaintenanceLogs(mLogs);
         setChecklists(chks);
+        setCdilUnits(cdil);
       } catch (err) {
         console.error("Dashboard load error", err);
       } finally {
@@ -248,13 +257,59 @@ export const Dashboard: React.FC<DashboardProps> = ({ user }) => {
                                               <div className="text-[9px] font-black uppercase text-gray-400">{eq.brand} • {eq.model}</div>
                                           </div>
                                           <div className={`px-3 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest ${eq.status === 'AVAILABLE' ? 'bg-success/10 text-success' : eq.status === 'IN_USE' ? 'bg-orange-100 text-orange-600' : 'bg-danger/10 text-danger'}`}>
-                                              {eq.status}
+                                              {eqStatusLabel(eq.status)}
                                           </div>
                                       </div>
                                   ))}
                               </div>
                           </div>
                       </div>
+
+                      {cdilUnits.length > 0 && (() => {
+                          const needAttention = cdilUnits.filter(u => u.currentState && (['buse','crepine','ligne'] as const).some(k => u.currentState![k] !== 'ok'));
+                          const lastVisit = cdilUnits.reduce<string | undefined>((acc, u) => {
+                              if (!u.lastVisitDate) return acc;
+                              return !acc || u.lastVisitDate > acc ? u.lastVisitDate : acc;
+                          }, undefined);
+                          return (
+                              <div className="bg-white p-8 rounded-[40px] border border-border shadow-sm mt-8">
+                                  <h3 className="font-black text-dark uppercase tracking-widest text-xs mb-6 flex items-center gap-2"><Droplets size={16} className="text-primary"/> Centrales de Dilution</h3>
+                                  <div className="grid grid-cols-3 gap-4 mb-6">
+                                      <div className="flex flex-col items-center justify-center p-4 bg-gray-50 rounded-2xl">
+                                          <span className="text-3xl font-black text-dark">{cdilUnits.length}</span>
+                                          <span className="text-[10px] font-black uppercase tracking-widest text-gray-400 mt-1">Unités actives</span>
+                                      </div>
+                                      <div className={`flex flex-col items-center justify-center p-4 rounded-2xl ${needAttention.length > 0 ? 'bg-orange-50' : 'bg-success/10'}`}>
+                                          <span className={`text-3xl font-black ${needAttention.length > 0 ? 'text-orange-500' : 'text-success'}`}>{needAttention.length}</span>
+                                          <span className={`text-[10px] font-black uppercase tracking-widest mt-1 ${needAttention.length > 0 ? 'text-orange-400' : 'text-success'}`}>À contrôler</span>
+                                      </div>
+                                      <div className="flex flex-col items-center justify-center p-4 bg-gray-50 rounded-2xl">
+                                          <span className="text-sm font-black text-dark">{lastVisit ? new Date(lastVisit).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}</span>
+                                          <span className="text-[10px] font-black uppercase tracking-widest text-gray-400 mt-1">Dernière visite</span>
+                                      </div>
+                                  </div>
+                                  {needAttention.length > 0 && (
+                                      <div className="space-y-2">
+                                          {needAttention.map(u => (
+                                              <div key={u.id} className="flex items-center justify-between p-3 bg-orange-50 border border-orange-100 rounded-2xl">
+                                                  <div>
+                                                      <div className="font-black text-sm text-dark">{u.location}</div>
+                                                      <div className="text-[10px] font-bold text-gray-400">{u.service} · {u.serialNumber}</div>
+                                                  </div>
+                                                  <div className="flex gap-1">
+                                                      {(['buse','crepine','ligne'] as const).filter(k => u.currentState && u.currentState[k] !== 'ok').map(k => (
+                                                          <span key={k} className="text-[9px] font-black px-1.5 py-0.5 rounded-md border bg-red-50 text-red-600 border-red-200">
+                                                              {k === 'buse' ? 'Buse' : k === 'crepine' ? 'Crép.' : 'Ligne'}:{String(u.currentState![k])}
+                                                          </span>
+                                                      ))}
+                                                  </div>
+                                              </div>
+                                          ))}
+                                      </div>
+                                  )}
+                              </div>
+                          );
+                      })()}
                   </div>
               )}
 
@@ -343,25 +398,45 @@ export const Dashboard: React.FC<DashboardProps> = ({ user }) => {
                   <div className="animate-in fade-in">
                       {!selectedEquipment ? (
                           <>
-                          {/* Filtres par catégorie */}
-                          <div className="flex flex-wrap gap-2 mb-6">
-                              {['ALL', ...Array.from(new Set(equipments.map(e => e.category || e.type).filter(Boolean)))].map(cat => (
-                                  <button
-                                      key={cat}
-                                      onClick={() => setCategoryFilter(cat)}
-                                      className={`px-4 py-2 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${
-                                          categoryFilter === cat
-                                              ? 'bg-primary text-white shadow-sm'
-                                              : 'bg-white border border-border text-gray-500 hover:border-primary/30'
-                                      }`}
-                                  >
-                                      {cat === 'ALL' ? 'Tout' : cat}
-                                  </button>
-                              ))}
+                          {/* Filtres par type et par état */}
+                          <div className="flex flex-col gap-3 mb-6">
+                              <div className="flex flex-wrap gap-2">
+                                  {['ALL', ...Array.from(new Set(equipments.map(e => e.category || e.type).filter(Boolean)))].map(cat => (
+                                      <button
+                                          key={cat}
+                                          onClick={() => setCategoryFilter(cat)}
+                                          className={`px-4 py-2 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${
+                                              categoryFilter === cat
+                                                  ? 'bg-primary text-white shadow-sm'
+                                                  : 'bg-white border border-border text-gray-500 hover:border-primary/30'
+                                          }`}
+                                      >
+                                          {cat === 'ALL' ? 'Tous les types' : cat}
+                                      </button>
+                                  ))}
+                              </div>
+                              <div className="flex flex-wrap gap-2">
+                                  {(['ALL', 'AVAILABLE', 'IN_USE', 'MAINTENANCE'] as const).map(s => (
+                                      <button
+                                          key={s}
+                                          onClick={() => setStatusFilter(s)}
+                                          className={`px-4 py-2 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${
+                                              statusFilter === s
+                                                  ? s === 'AVAILABLE' ? 'bg-success text-white shadow-sm'
+                                                  : s === 'IN_USE' ? 'bg-orange-500 text-white shadow-sm'
+                                                  : s === 'MAINTENANCE' ? 'bg-danger text-white shadow-sm'
+                                                  : 'bg-dark text-white shadow-sm'
+                                                  : 'bg-white border border-border text-gray-500 hover:border-primary/30'
+                                          }`}
+                                      >
+                                          {s === 'ALL' ? 'Tous les états' : eqStatusLabel(s)}
+                                      </button>
+                                  ))}
+                              </div>
                           </div>
                           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                               {equipments
-                                  .filter(eq => categoryFilter === 'ALL' || (eq.category || eq.type) === categoryFilter)
+                                  .filter(eq => (categoryFilter === 'ALL' || (eq.category || eq.type) === categoryFilter) && (statusFilter === 'ALL' || eq.status === statusFilter))
                                   .map(eq => (
                                   <div
                                     key={eq.id}
@@ -387,7 +462,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ user }) => {
                                       </div>
                                   </div>
                               ))}
-                              {equipments.filter(eq => categoryFilter === 'ALL' || (eq.category || eq.type) === categoryFilter).length === 0 && (
+                              {equipments.filter(eq => (categoryFilter === 'ALL' || (eq.category || eq.type) === categoryFilter) && (statusFilter === 'ALL' || eq.status === statusFilter)).length === 0 && (
                                   <div className="col-span-full py-20 text-center text-gray-400 text-xs font-black uppercase tracking-widest">
                                       Aucun objet répertorié.
                                   </div>
@@ -408,7 +483,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ user }) => {
                                       <div className="flex items-center gap-3 mb-2">
                                         <h2 className="text-2xl font-black text-dark">{selectedEquipment.name}</h2>
                                         <div className={`px-3 py-1 rounded-xl text-[10px] font-black uppercase tracking-widest ${selectedEquipment.status === 'AVAILABLE' ? 'bg-success/10 text-success' : selectedEquipment.status === 'IN_USE' ? 'bg-orange-100 text-orange-600' : 'bg-danger/10 text-danger'}`}>
-                                            {selectedEquipment.status}
+                                            {eqStatusLabel(selectedEquipment.status)}
                                         </div>
                                       </div>
                                       <p className="text-xs font-black uppercase tracking-widest text-gray-400">{selectedEquipment.brand} • {selectedEquipment.model} • ID: {selectedEquipment.uniqueId}</p>
