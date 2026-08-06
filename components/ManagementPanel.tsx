@@ -600,7 +600,7 @@ export const ManagementPanel: React.FC<ManagementPanelProps> = ({ user }) => {
                             }}
                             className="w-full p-4 bg-gray-50 border rounded-2xl text-xs font-bold focus:border-primary focus:outline-none"
                         >
-                            <option value="">Catégorie *</option>
+                            <option value="">Type d'équipement *</option>
                             {equipmentTypes.map(t => <option key={t.id} value={t.code}>{t.name} ({t.code})</option>)}
                         </select>
                         <button type="button" onClick={() => setShowAddType(!showAddType)} className="mt-1 text-[10px] font-black text-primary/60 hover:text-primary uppercase tracking-widest">
@@ -646,7 +646,10 @@ export const ManagementPanel: React.FC<ManagementPanelProps> = ({ user }) => {
                         <div className="flex flex-col gap-2 p-4 border rounded-2xl bg-gray-50">
                             <div className="flex items-center gap-3 cursor-pointer" onClick={() => setEqCreateMultiple(!eqCreateMultiple)}>
                                 <input type="checkbox" checked={eqCreateMultiple} onChange={() => {}} className="w-5 h-5 accent-primary"/>
-                                <span className="text-xs font-bold text-dark uppercase">Créer plusieurs exemplaires (Unitaires)</span>
+                                <div>
+                                    <span className="text-xs font-bold text-dark uppercase">Créer plusieurs exemplaires</span>
+                                    <p className="text-[10px] text-gray-400 mt-0.5">Chaque exemplaire a son propre QR code indépendant</p>
+                                </div>
                             </div>
                             {eqCreateMultiple && (
                                 <input type="number" min="2" placeholder="Nombre d'exemplaires (ex: 24)" value={eqCreateMultipleQty} onChange={e=>setEqCreateMultipleQty(parseInt(e.target.value)||1)} className="w-full p-4 bg-primary/10 border-primary border rounded-2xl text-xs font-bold text-primary mt-2"/>
@@ -658,7 +661,10 @@ export const ManagementPanel: React.FC<ManagementPanelProps> = ({ user }) => {
                         <>
                             <div className="flex items-center gap-3 p-4 border rounded-2xl bg-gray-50 cursor-pointer" onClick={() => setEqIsBatch(!eqIsBatch)}>
                                 <input type="checkbox" checked={eqIsBatch} onChange={() => {}} className="w-5 h-5 accent-primary"/>
-                                <span className="text-xs font-bold text-dark uppercase">Gérer en lot / quantité</span>
+                                <div>
+                                    <span className="text-xs font-bold text-dark uppercase">Gérer en lot / quantité</span>
+                                    <p className="text-[10px] text-gray-400 mt-0.5">Un seul QR code partagé avec suivi du stock disponible</p>
+                                </div>
                             </div>
 
                             {eqIsBatch && (

@@ -64,10 +64,10 @@
 
 | Problème | Composant | Notes |
 |----------|-----------|-------|
-| "Catégorie" vs "Type" — deux mots pour le même concept dans le formulaire équipement | ManagementPanel | À clarifier avec le métier avant de renommer |
-| "Créer plusieurs exemplaires (Unitaires)" vs "Gérer en lot" — distinction pas évidente | ManagementPanel | Ajouter une phrase explicative sous chaque option |
+| ~~"Catégorie" vs "Type" — deux mots pour le même concept~~ | ManagementPanel | ✅ Select renommé "Type d'équipement" |
+| ~~"Créer plusieurs exemplaires (Unitaires)" vs "Gérer en lot" — distinction pas évidente~~ | ManagementPanel | ✅ Description ajoutée sous chaque option |
+| ~~Passage vers checklist inattendu au clic "Marquer résolu"~~ | TicketPanel | ✅ Hint affiché sous le bouton quand une vérification est requise |
 | "Pris par un autre technicien" — pas de nom affiché | TicketPanel | Nécessite de stocker `assignedToName` dans le ticket (chantier CF) |
-| Passage vers checklist inattendu au clic "Marquer résolu" | TicketPanel | Afficher la liste des vérifications requises avant le clic |
 | Grille de saisie CDil non utilisable sur mobile (scroll horizontal) | CdilVisitPanel | Refonte responsive — layout en cartes empilées sur petit écran |
 
 ### Mineurs

@@ -411,11 +411,25 @@ export const TicketPanel: React.FC<TicketPanelProps> = ({ user }) => {
                       Fermer
                     </button>
                   )}
-                  {(selectedTicket.assignedTo === user.id || isManager) && (
-                    <button onClick={() => handleResolveClick(selectedTicket)} disabled={actionLoading} className="flex-[2] py-5 bg-success text-white font-black rounded-2xl uppercase tracking-widest text-[10px] shadow-xl shadow-success/20 disabled:opacity-50 flex items-center justify-center gap-2">
-                      <CheckSquare size={14} /> Marquer résolu
-                    </button>
-                  )}
+                  {(selectedTicket.assignedTo === user.id || isManager) && (() => {
+                    const eq = equipments.find(e => e.id === selectedTicket.equipmentId);
+                    const hasChecklist = eq && checklists.some(c =>
+                      c.triggerType === 'MAINTENANCE' && !c.isArchived &&
+                      (c.targetContext === 'ALL' ||
+                        (c.targetContext === 'TYPE' && c.targetValue === eq.type) ||
+                        (c.targetContext === 'SPECIFIC' && c.targetValue === eq.id))
+                    );
+                    return (
+                      <div className="flex-[2] flex flex-col gap-1">
+                        <button onClick={() => handleResolveClick(selectedTicket)} disabled={actionLoading} className="w-full py-5 bg-success text-white font-black rounded-2xl uppercase tracking-widest text-[10px] shadow-xl shadow-success/20 disabled:opacity-50 flex items-center justify-center gap-2">
+                          <CheckSquare size={14} /> Marquer résolu
+                        </button>
+                        {hasChecklist && (
+                          <p className="text-[9px] text-gray-400 text-center">Une vérification sera demandée avant clôture</p>
+                        )}
+                      </div>
+                    );
+                  })()}
                   {selectedTicket.assignedTo !== user.id && !isManager && (
                     <div className="flex-1 py-4 text-center bg-gray-50 rounded-2xl border flex flex-col items-center justify-center gap-1">
                       <span className="text-[10px] font-black text-gray-300 uppercase tracking-widest">Pris en charge par un autre technicien</span>
