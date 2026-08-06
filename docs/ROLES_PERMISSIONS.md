@@ -243,8 +243,8 @@ Il ne peut exécuter aucune action — pas d'emprunt, pas de ticket, pas de sign
 
 > Légende : 🔴 Prioritaire · 🟡 Moyen terme · 🟢 Évolution future
 
-- 🔴 **Multi-tenant TECHNICIAN** : un technicien Clean&Tech doit pouvoir basculer entre plusieurs établissements avec un seul compte. Structure de données prête (`accessibleTenantIds[]`), logique applicative (sélecteur d'établissement, gardes CF) à implémenter.
-- 🔴 **Restitution forcée MANAGER** : permettre au MANAGER de forcer la remise à disposition d'un équipement depuis le ManagementPanel, sans passer par le scan QR ni contacter l'agent.
+- ✅ **Multi-tenant TECHNICIAN** : CF ADD/REMOVE_TENANT_ACCESS, panneau "Associer" dans ManagementPanel, badge multi-site, sélecteur d'établissement dans Layout.
+- ✅ **Restitution forcée MANAGER** : CF FORCE_RETURN, bouton LogIn sur cartes IN_USE, confirmation avant exécution.
 - 🟡 **Export dashboard CLIENT** : PDF ou CSV de synthèse mensuelle pour les décideurs (directeurs, référents qualité).
 - 🟡 **Photos CDil** : upload Firebase Storage dans les entrées de visite — champ `photos[]` déjà prévu dans `VisitEntry`, implémentation Storage à faire.
 - 🟡 **Patron visite autres équipements** : étendre le système CDil (sessions + export CSV) aux autres types d'équipements — colonnes métier à définir au cas par cas.
