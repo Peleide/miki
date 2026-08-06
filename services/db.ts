@@ -101,8 +101,11 @@ class DatabaseService {
   }
 
   async deleteEquipment(equipmentId: string, manager: User) {
-      // Pour raison de traçabilité, la modification "ARCHIVED" est préférée, mais si l'UI appelle DELETE:
       return await this.call('manageEquipment', { action: 'ARCHIVE', tenantId: manager.tenantId, payload: { id: equipmentId } });
+  }
+
+  async forceReturnEquipment(equipmentId: string, manager: User) {
+      return await this.call('manageEquipment', { action: 'FORCE_RETURN', tenantId: manager.tenantId, payload: { id: equipmentId } });
   }
 
   async adminUpdateTenantStatus(id: string, status: 'ACTIVE' | 'SUSPENDED', admin: User) {

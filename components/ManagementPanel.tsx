@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import QRCode from 'react-qr-code';
 import { User, Equipment, Tenant, UserRole, WeeklySchedule, DaySchedule, Site, EquipmentType, CdilUnit, VisitSession, VisitEntry } from '../types';
 import { db } from '../services/db';
-import { Plus, QrCode, RefreshCw, Printer, X, Download, User as UserIcon, Box, Pencil, Search, Check, ListChecks, MapPin, KeyRound, Power, ClipboardList, Droplets, Loader2, ChevronLeft, ChevronRight, Settings2, ShieldCheck, Gauge } from 'lucide-react';
+import { Plus, QrCode, RefreshCw, Printer, X, Download, User as UserIcon, Box, Pencil, Search, Check, ListChecks, MapPin, KeyRound, Power, ClipboardList, Droplets, Loader2, ChevronLeft, ChevronRight, Settings2, ShieldCheck, Gauge, LogIn } from 'lucide-react';
 import { Logo } from './Logo';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
@@ -823,6 +823,26 @@ export const ManagementPanel: React.FC<ManagementPanelProps> = ({ user }) => {
                             <div className="flex justify-between items-center mt-6 pt-4 border-t">
                                 <span className="text-[10px] font-bold text-gray-300">Usages: {eq.usageCount}</span>
                                 <div className="flex gap-2">
+                                    {!eq.isArchived && eq.status === 'IN_USE' && (
+                                        <button
+                                            title="Forcer la restitution"
+                                            onClick={async () => {
+                                                const ok = await confirm({ title: 'Restitution forcée', message: `Remettre "${eq.name}" comme disponible ? L'emprunteur actuel sera désassocié.`, confirmLabel: 'Restituer', variant: 'danger' });
+                                                if (!ok) return;
+                                                setLoading(true);
+                                                try {
+                                                    await db.forceReturnEquipment(eq.id, user);
+                                                    await refreshData();
+                                                    toast('Restitution effectuée', 'success');
+                                                } catch (e: any) {
+                                                    toast(e.message || 'Erreur', 'error');
+                                                } finally { setLoading(false); }
+                                            }}
+                                            className="text-orange-500 hover:bg-orange-50 p-2 rounded-xl transition-all"
+                                        >
+                                            <LogIn size={16}/>
+                                        </button>
+                                    )}
                                     {!eq.isArchived && <button onClick={() => editEquipment(eq)} className="text-primary hover:bg-primary/10 p-2 rounded-xl transition-all"><Pencil size={16}/></button>}
                                     {!eq.isArchived && <button onClick={() => checkArchiveEq(eq.id)} className="text-danger hover:bg-red-50 p-2 rounded-xl transition-all"><X size={16}/></button>}
                                 </div>

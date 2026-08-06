@@ -531,6 +531,33 @@ export const manageEquipment = functions
       return { success: true };
     }
 
+    if (action === "FORCE_RETURN") {
+      const eqRef = db.collection("tenants").doc(tenantId).collection("equipments").doc(payload.id);
+      const eqSnap = await eqRef.get();
+      if (!eqSnap.exists) throw new functions.https.HttpsError("not-found", "Équipement introuvable.");
+      const eqData = eqSnap.data()!;
+      if (eqData.status !== "IN_USE") throw new functions.https.HttpsError("failed-precondition", "L'équipement n'est pas emprunté.");
+
+      const usersSnap = await db.collection("users").where("activeEquipmentId", "==", payload.id).get();
+      const batch = db.batch();
+      batch.update(eqRef, { status: "AVAILABLE", currentSiteId: FieldValue.delete() });
+      usersSnap.docs.forEach(doc => batch.update(doc.ref, { activeEquipmentId: null }));
+
+      const logRef = db.collection("tenants").doc(tenantId).collection("equipmentLogs").doc();
+      batch.set(logRef, {
+        id: logRef.id, tenantId,
+        equipmentId: payload.id, equipmentName: eqData.name,
+        userId: context.auth!.uid, userName: actorName,
+        action: "FORCE_RETURN",
+        timestamp: new Date().toISOString(),
+        serverTimestamp: FieldValue.serverTimestamp(),
+      });
+
+      await batch.commit();
+      writeAuditLog({ action: 'EQUIPMENT_UPDATED', actorId: context.auth!.uid, actorName, tenantId, targetId: payload.id, targetName: eqData.name, details: { reason: 'Restitution forcée par le responsable' } }).catch(console.error);
+      return { success: true };
+    }
+
     return { success: false };
   });
 
