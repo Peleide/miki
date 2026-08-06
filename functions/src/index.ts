@@ -398,6 +398,54 @@ export const manageUser = functions
           return { success: true, tempPassword };
         }
     }
+    if (action === "ADD_TENANT_ACCESS") {
+      const emailToFind = (userData?.email || "").toLowerCase().trim();
+      if (!emailToFind) throw new functions.https.HttpsError("invalid-argument", "Email requis.");
+      let existingAuthUser: admin.auth.UserRecord;
+      try {
+        existingAuthUser = await auth.getUserByEmail(emailToFind);
+      } catch {
+        throw new functions.https.HttpsError("not-found", "Aucun compte trouvé avec cet email.");
+      }
+      const targetRef = db.collection("users").doc(existingAuthUser.uid);
+      const targetSnap = await targetRef.get();
+      if (!targetSnap.exists) throw new functions.https.HttpsError("not-found", "Utilisateur introuvable en base.");
+      const targetData = targetSnap.data()!;
+      if (targetData.tenantsAccess?.["platform"] === "ADMIN") {
+        throw new functions.https.HttpsError("permission-denied", "Opération non autorisée sur un administrateur plateforme.");
+      }
+      const normalizedRole = ((userData?.role as string) || "TECHNICIAN").toUpperCase();
+      if (!["TECHNICIAN", "AGENT"].includes(normalizedRole)) {
+        throw new functions.https.HttpsError("invalid-argument", "Seuls les rôles TECHNICIAN et AGENT peuvent être associés via cette action.");
+      }
+      if (targetData.tenantsAccess?.[tenantId]) {
+        throw new functions.https.HttpsError("already-exists", "Cet utilisateur a déjà accès à ce site.");
+      }
+      await targetRef.update({
+        [`tenantsAccess.${tenantId}`]: normalizedRole,
+        accessibleTenantIds: FieldValue.arrayUnion(tenantId),
+      });
+      writeAuditLog({ action: 'USER_UPDATED', actorId: context.auth!.uid, actorName, tenantId, targetId: existingAuthUser.uid, targetName: `${targetData.firstName} ${targetData.lastName}`, details: { action: 'ADD_TENANT_ACCESS', role: normalizedRole } }).catch(console.error);
+      return { success: true, targetId: existingAuthUser.uid, targetName: `${targetData.firstName} ${targetData.lastName}` };
+    }
+
+    if (action === "REMOVE_TENANT_ACCESS") {
+      const targetRef = db.collection("users").doc(targetUserId);
+      const targetSnap = await targetRef.get();
+      if (!targetSnap.exists) throw new functions.https.HttpsError("not-found", "Utilisateur introuvable.");
+      const targetData = targetSnap.data()!;
+      const tenantIds = Object.keys(targetData.tenantsAccess || {}).filter((id: string) => id !== "platform");
+      if (tenantIds.length <= 1) {
+        throw new functions.https.HttpsError("failed-precondition", "Impossible de retirer le seul accès de cet utilisateur. Désactivez le compte à la place.");
+      }
+      await targetRef.update({
+        [`tenantsAccess.${tenantId}`]: FieldValue.delete(),
+        accessibleTenantIds: FieldValue.arrayRemove(tenantId),
+      });
+      writeAuditLog({ action: 'USER_UPDATED', actorId: context.auth!.uid, actorName, tenantId, targetId: targetUserId, targetName: `${targetData.firstName} ${targetData.lastName}`, details: { action: 'REMOVE_TENANT_ACCESS' } }).catch(console.error);
+      return { success: true };
+    }
+
     return { success: false };
   });
 

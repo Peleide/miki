@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import QRCode from 'react-qr-code';
 import { User, Equipment, Tenant, UserRole, WeeklySchedule, DaySchedule, Site, EquipmentType, CdilUnit, VisitSession, VisitEntry } from '../types';
 import { db } from '../services/db';
-import { Plus, QrCode, RefreshCw, Printer, X, Download, User as UserIcon, Box, Pencil, Search, Check, ListChecks, MapPin, KeyRound, Power, ClipboardList, Droplets, Loader2, ChevronLeft, ChevronRight, Settings2, ShieldCheck, Gauge, LogIn } from 'lucide-react';
+import { Plus, QrCode, RefreshCw, Printer, X, Download, User as UserIcon, Box, Pencil, Search, Check, ListChecks, MapPin, KeyRound, Power, ClipboardList, Droplets, Loader2, ChevronLeft, ChevronRight, Settings2, ShieldCheck, Gauge, LogIn, UserPlus, UserMinus, Building2 } from 'lucide-react';
 import { Logo } from './Logo';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
@@ -67,6 +67,8 @@ export const ManagementPanel: React.FC<ManagementPanelProps> = ({ user }) => {
   const [createdUser, setCreatedUser] = useState<User | null>(null);
   const [userActionLoading, setUserActionLoading] = useState<string | null>(null);
   const [resetPwdResult, setResetPwdResult] = useState<{ userId: string; tempPassword: string } | null>(null);
+  const [inviteEmail, setInviteEmail] = useState('');
+  const [inviteLoading, setInviteLoading] = useState(false);
 
   // CDil Units
   const [cdilUnits, setCdilUnits] = useState<CdilUnit[]>([]);
@@ -245,6 +247,35 @@ export const ManagementPanel: React.FC<ManagementPanelProps> = ({ user }) => {
         toast(e.message || "Erreur de création utilisateur");
     } finally {
         setLoading(false);
+    }
+  };
+
+  const handleAddTenantAccess = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setInviteLoading(true);
+    try {
+        await db.addTenantAccess(user.tenantId, inviteEmail, UserRole.TECHNICIAN, user);
+        setInviteEmail('');
+        await refreshData();
+        toast('Technicien associé à ce site.', 'success');
+    } catch (e: any) {
+        toast(e.message || 'Erreur lors de l\'association', 'error');
+    } finally {
+        setInviteLoading(false);
+    }
+  };
+
+  const handleRemoveTenantAccess = async (targetUser: User) => {
+    const ok = await confirm({ title: 'Retirer l\'accès', message: `Retirer l'accès de ${targetUser.firstName} ${targetUser.lastName} à ce site ? Leur compte restera actif sur les autres sites.`, confirmLabel: 'Retirer', variant: 'danger' });
+    if (!ok) return;
+    setUserActionLoading(targetUser.id);
+    try {
+        await db.removeTenantAccess(user.tenantId, targetUser.id, user);
+        await refreshData();
+    } catch (e: any) {
+        toast(e.message || 'Erreur', 'error');
+    } finally {
+        setUserActionLoading(null);
     }
   };
 
@@ -1122,19 +1153,31 @@ export const ManagementPanel: React.FC<ManagementPanelProps> = ({ user }) => {
 
       {activeTab === 'users' && (
          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-             <div className="lg:col-span-1 border rounded-[32px] bg-white p-8">
-                  <h3 className="font-black text-sm uppercase tracking-widest mb-6 text-dark flex gap-2"><Plus size={18} className="text-primary"/> Nouvel Utilisateur</h3>
-                  <form onSubmit={handleCreateUser} className="space-y-4">
-                      <input required placeholder="Prénom" value={newUserFn} onChange={e=>setNewUserFn(e.target.value)} className="w-full p-4 bg-gray-50 border rounded-2xl text-xs font-bold outline-none focus:border-primary"/>
-                      <input required placeholder="Nom" value={newUserLn} onChange={e=>setNewUserLn(e.target.value)} className="w-full p-4 bg-gray-50 border rounded-2xl text-xs font-bold outline-none focus:border-primary"/>
-                      <input required type="email" placeholder="Email" value={newUserEmail} onChange={e=>setNewUserEmail(e.target.value)} className="w-full p-4 bg-gray-50 border rounded-2xl text-xs font-bold outline-none focus:border-primary"/>
-                      <select value={newUserRole} onChange={e=>setNewUserRole(e.target.value as UserRole)} className="w-full p-4 bg-gray-50 border rounded-2xl text-xs font-bold outline-none focus:border-primary">
-                          <option value={UserRole.AGENT}>Agent (Utilisateur standard)</option>
-                          <option value={UserRole.TECHNICIAN}>Technicien (Maintenance)</option>
-                          <option value={UserRole.MANAGER}>Manager (Admin Local)</option>
-                      </select>
-                      <button type="submit" disabled={loading} className="w-full py-4 bg-primary text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-xl disabled:opacity-50">Créer</button>
-                  </form>
+             <div className="lg:col-span-1 space-y-6">
+                 <div className="border rounded-[32px] bg-white p-8">
+                      <h3 className="font-black text-sm uppercase tracking-widest mb-6 text-dark flex gap-2"><Plus size={18} className="text-primary"/> Nouvel Utilisateur</h3>
+                      <form onSubmit={handleCreateUser} className="space-y-4">
+                          <input required placeholder="Prénom" value={newUserFn} onChange={e=>setNewUserFn(e.target.value)} className="w-full p-4 bg-gray-50 border rounded-2xl text-xs font-bold outline-none focus:border-primary"/>
+                          <input required placeholder="Nom" value={newUserLn} onChange={e=>setNewUserLn(e.target.value)} className="w-full p-4 bg-gray-50 border rounded-2xl text-xs font-bold outline-none focus:border-primary"/>
+                          <input required type="email" placeholder="Email" value={newUserEmail} onChange={e=>setNewUserEmail(e.target.value)} className="w-full p-4 bg-gray-50 border rounded-2xl text-xs font-bold outline-none focus:border-primary"/>
+                          <select value={newUserRole} onChange={e=>setNewUserRole(e.target.value as UserRole)} className="w-full p-4 bg-gray-50 border rounded-2xl text-xs font-bold outline-none focus:border-primary">
+                              <option value={UserRole.AGENT}>Agent (Utilisateur standard)</option>
+                              <option value={UserRole.TECHNICIAN}>Technicien (Maintenance)</option>
+                              <option value={UserRole.MANAGER}>Manager (Admin Local)</option>
+                          </select>
+                          <button type="submit" disabled={loading} className="w-full py-4 bg-primary text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-xl disabled:opacity-50">Créer</button>
+                      </form>
+                 </div>
+                 <div className="border rounded-[32px] bg-white p-8">
+                     <h3 className="font-black text-sm uppercase tracking-widest mb-2 text-dark flex gap-2"><UserPlus size={18} className="text-primary"/> Associer un technicien</h3>
+                     <p className="text-gray-400 text-xs font-medium mb-6">Ajoute un technicien déjà enregistré dans un autre site à ce site.</p>
+                     <form onSubmit={handleAddTenantAccess} className="space-y-4">
+                         <input required type="email" placeholder="Email du technicien" value={inviteEmail} onChange={e=>setInviteEmail(e.target.value)} className="w-full p-4 bg-gray-50 border rounded-2xl text-xs font-bold outline-none focus:border-primary"/>
+                         <button type="submit" disabled={inviteLoading} className="w-full py-4 bg-primary/10 text-primary rounded-2xl text-[10px] font-black uppercase tracking-widest disabled:opacity-50">
+                             {inviteLoading ? <Loader2 size={14} className="animate-spin mx-auto"/> : 'Associer à ce site'}
+                         </button>
+                     </form>
+                 </div>
              </div>
              <div className="lg:col-span-2">
                  {createdUser && (
@@ -1169,6 +1212,11 @@ export const ManagementPanel: React.FC<ManagementPanelProps> = ({ user }) => {
                                          <span className="bg-gray-100 text-gray-500 px-3 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest">
                                              {u.tenantsAccess?.[user.tenantId] || u.role}
                                          </span>
+                                         {Object.keys(u.tenantsAccess || {}).filter(id => id !== 'platform').length > 1 && (
+                                             <span title={`Accès à ${Object.keys(u.tenantsAccess || {}).filter(id => id !== 'platform').length} sites`} className="flex items-center gap-1 bg-primary/10 text-primary px-3 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest">
+                                                 <Building2 size={10}/> {Object.keys(u.tenantsAccess || {}).filter(id => id !== 'platform').length} sites
+                                             </span>
+                                         )}
                                          {u.isDisabled && (
                                              <span className="bg-orange-100 text-orange-600 px-3 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest">Désactivé</span>
                                          )}
@@ -1189,10 +1237,20 @@ export const ManagementPanel: React.FC<ManagementPanelProps> = ({ user }) => {
                                          onClick={() => handleToggleDisable(u)}
                                          disabled={userActionLoading === u.id}
                                          title={u.isDisabled ? 'Réactiver' : 'Désactiver'}
-                                         className={`p-2 rounded-xl transition-all disabled:opacity-40 ${u.isDisabled ? 'text-success hover:bg-success/10' : 'text-danger hover:bg-red-50'}`}
+                                         className={`p-2 rounded-xl transition-all disabled:opacity-40 ${u.isDisabled ? 'text-success hover:bg-success/10' : 'text-warning hover:bg-orange-50'}`}
                                      >
                                          <Power size={16}/>
                                      </button>
+                                     {Object.keys(u.tenantsAccess || {}).filter(id => id !== 'platform').length > 1 && (
+                                         <button
+                                             onClick={() => handleRemoveTenantAccess(u)}
+                                             disabled={userActionLoading === u.id}
+                                             title="Retirer l'accès à ce site"
+                                             className="text-danger hover:bg-red-50 p-2 rounded-xl transition-all disabled:opacity-40"
+                                         >
+                                             <UserMinus size={16}/>
+                                         </button>
+                                     )}
                                  </div>
                              )}
                          </div>

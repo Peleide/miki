@@ -108,6 +108,14 @@ class DatabaseService {
       return await this.call('manageEquipment', { action: 'FORCE_RETURN', tenantId: manager.tenantId, payload: { id: equipmentId } });
   }
 
+  async addTenantAccess(tenantId: string, email: string, role: UserRole, actor: User): Promise<{ targetId: string; targetName: string }> {
+      return await this.call('manageUser', { action: 'ADD_TENANT_ACCESS', tenantId, userData: { email, role } }) as { targetId: string; targetName: string };
+  }
+
+  async removeTenantAccess(tenantId: string, targetUserId: string, actor: User) {
+      return await this.call('manageUser', { action: 'REMOVE_TENANT_ACCESS', tenantId, targetUserId });
+  }
+
   async adminUpdateTenantStatus(id: string, status: 'ACTIVE' | 'SUSPENDED', admin: User) {
       return await this.call('manageStructure', { action: 'UPDATE_TENANT', tenantId: id, payload: { status } });
   }
