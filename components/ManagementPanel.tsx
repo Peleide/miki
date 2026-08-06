@@ -895,7 +895,7 @@ export const ManagementPanel: React.FC<ManagementPanelProps> = ({ user }) => {
                                             const next = [...chkItems]; next[i].triggersIncidentIfFalse = !next[i].triggersIncidentIfFalse; setChkItems(next);
                                         }}>
                                             <input type="checkbox" checked={item.triggersIncidentIfFalse} onChange={()=>{}} className="accent-danger" />
-                                            <span className="text-[9px] font-bold text-gray-400 uppercase">BLOQUANT (NON = TICKET)</span>
+                                            <span className="text-[9px] font-bold text-gray-400 uppercase">NON → crée un incident</span>
                                         </div>
                                     )}
                                 </div>
@@ -957,7 +957,7 @@ export const ManagementPanel: React.FC<ManagementPanelProps> = ({ user }) => {
                                                 {item.type === 'BOOLEAN' && chkTrigger === 'USE' && (
                                                     <div className="flex items-center gap-1 cursor-pointer" onClick={()=>{const next=[...chkItems];next[i].triggersIncidentIfFalse=!next[i].triggersIncidentIfFalse;setChkItems(next);}}>
                                                         <input type="checkbox" checked={item.triggersIncidentIfFalse} onChange={()=>{}} className="accent-danger"/>
-                                                        <span className="text-[9px] font-bold text-gray-400 uppercase">BLOQUANT</span>
+                                                        <span className="text-[9px] font-bold text-gray-400 uppercase">NON → crée un incident</span>
                                                     </div>
                                                 )}
                                             </div>

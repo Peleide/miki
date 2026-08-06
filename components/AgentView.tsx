@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { User, Equipment, EquipmentLogAction, UserRole } from '../types';
 import { db } from '../services/db';
-import { CheckCircle, MapPin, LogIn, LogOut, AlertTriangle, X, Loader2, RefreshCw, Check, LayoutGrid, ChevronDown, Wrench, Package, Box } from 'lucide-react';
+import { CheckCircle, MapPin, LogIn, LogOut, AlertTriangle, X, Loader2, RefreshCw, Check, LayoutGrid, ChevronDown, Wrench, Package, Box, Search } from 'lucide-react';
 import { Html5Qrcode } from 'html5-qrcode';
 import { useDialog } from '../hooks/useDialog';
 
@@ -18,7 +18,8 @@ export const AgentView: React.FC<AgentViewProps> = ({ user, isOnline, onModeChan
   const [mode, setMode] = useState<'scan' | 'list'>(savedMode || 'list');
   
   const [equipments, setEquipments] = useState<Equipment[]>([]);
-  const [selectedBrand, setSelectedBrand] = useState<string>('ALL');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedType, setSelectedType] = useState<string>('ALL');
   const [selectedEq, setSelectedEq] = useState<Equipment | null>(null);
   
   const [loading, setLoading] = useState(false);
@@ -275,16 +276,20 @@ export const AgentView: React.FC<AgentViewProps> = ({ user, isOnline, onModeChan
       else setReportTags([...reportTags, tag]);
   };
 
-  const getBrands = () => {
-      const brands = equipments.map(e => e.brand).filter(Boolean);
-      return Array.from(new Set(brands)).sort();
+  const getTypes = () => {
+      const types = equipments.map(e => e.type).filter(Boolean);
+      return Array.from(new Set(types)).sort();
   };
 
   const filteredEqs = useMemo(() => {
-      return selectedBrand === 'ALL' 
-          ? equipments 
-          : equipments.filter(e => e.brand === selectedBrand);
-  }, [equipments, selectedBrand]);
+      const q = searchQuery.toLowerCase().trim();
+      return equipments.filter(e => {
+          const matchType = selectedType === 'ALL' || e.type === selectedType;
+          const matchSearch = !q || [e.name, e.brand, e.model, e.serialNumber, e.storageLocation]
+              .some(v => v?.toLowerCase().includes(q));
+          return matchType && matchSearch;
+      });
+  }, [equipments, searchQuery, selectedType]);
 
   const isUserActiveHere = selectedEq?.id === activeSessionEquipmentId;
   const isUserActiveElsewhere = !!activeSessionEquipmentId && !isUserActiveHere;
@@ -319,20 +324,34 @@ export const AgentView: React.FC<AgentViewProps> = ({ user, isOnline, onModeChan
       </div>
 
       {mode === 'list' && (
-          <div className="relative mb-6">
-              <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                <Package className="text-primary" size={18} />
+          <div className="mb-4 space-y-2">
+              <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                      <Search className="text-gray-400" size={16} />
+                  </div>
+                  <input
+                      type="text"
+                      value={searchQuery}
+                      onChange={e => setSearchQuery(e.target.value)}
+                      placeholder="Rechercher un équipement…"
+                      className="w-full bg-white border border-border rounded-2xl py-4 pl-11 pr-4 text-sm font-bold text-dark outline-none focus:ring-4 focus:ring-primary/10 transition-all shadow-sm"
+                  />
               </div>
-              <select
-                  value={selectedBrand}
-                  onChange={(e) => setSelectedBrand(e.target.value)}
-                  className="w-full appearance-none bg-white border border-border rounded-2xl py-4 pl-12 pr-10 text-sm font-black text-dark outline-none focus:ring-4 focus:ring-primary/10 transition-all shadow-sm"
-              >
-                  <option value="ALL">Toutes les marques</option>
-                  {getBrands().map(b => <option key={b} value={b}>{b}</option>)}
-              </select>
-              <div className="absolute inset-y-0 right-0 pr-4 flex items-center pointer-events-none">
-                <ChevronDown className="text-gray-400" size={20} />
+              <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                      <Package className="text-primary" size={16} />
+                  </div>
+                  <select
+                      value={selectedType}
+                      onChange={e => setSelectedType(e.target.value)}
+                      className="w-full appearance-none bg-white border border-border rounded-2xl py-3 pl-11 pr-10 text-sm font-black text-dark outline-none focus:ring-4 focus:ring-primary/10 transition-all shadow-sm"
+                  >
+                      <option value="ALL">Tous les types</option>
+                      {getTypes().map(t => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                  <div className="absolute inset-y-0 right-0 pr-4 flex items-center pointer-events-none">
+                      <ChevronDown className="text-gray-400" size={18} />
+                  </div>
               </div>
           </div>
       )}
