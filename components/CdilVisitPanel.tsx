@@ -17,33 +17,59 @@ const STATE_CLASS: Record<string, string> = {
   '2': 'bg-danger/10 text-danger border-danger/30',
 };
 
-function exportToCsv(session: VisitSession) {
+const HEADERS = ['Date', 'Type de visite', 'Technicien', 'Localisation', 'Service', 'N° Série', 'Buse', 'Crépine', 'Ligne aspiration', 'Remarques'];
+
+function formatDateFr(isoDate: string): string {
+  const [y, m, d] = isoDate.split('-');
+  return `${d}/${m}/${y}`;
+}
+
+function sessionToRows(session: VisitSession): string[][] {
   const typeLabel = session.sessionType === 'INTERVENTION' ? 'Intervention inopinée' : 'Visite périodique';
-  const headers = ['Date', 'Type de visite', 'Technicien', 'Localisation', 'Service', 'N° Série', 'Buse', 'Crépine', 'Ligne aspiration', 'Remarques'];
-  const rows = session.entries.map(e => [
-    session.date,
+  return session.entries.map(e => [
+    formatDateFr(session.date),
     typeLabel,
     session.technicianName,
     e.location,
     e.service,
     e.serialNumber,
-    String(e.buse),
-    String(e.crepine),
-    String(e.ligne),
+    STATE_LABEL[String(e.buse)] ?? String(e.buse),
+    STATE_LABEL[String(e.crepine)] ?? String(e.crepine),
+    STATE_LABEL[String(e.ligne)] ?? String(e.ligne),
     e.remarks || '',
   ]);
+}
 
-  const csvContent = [headers, ...rows]
-    .map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(';'))
+function buildCsv(rows: string[][]): string {
+  return [HEADERS, ...rows]
+    .map(row => row.map(cell => `"${cell.replace(/"/g, '""')}"`).join(';'))
     .join('\n');
+}
 
+function triggerDownload(csvContent: string, filename: string) {
   const blob = new Blob(['﻿' + csvContent], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `CDil_${session.title.replace(/\s+/g, '_')}.csv`;
+  a.download = filename;
   a.click();
   URL.revokeObjectURL(url);
+}
+
+function exportToCsv(session: VisitSession) {
+  const typeSlug = session.sessionType === 'INTERVENTION' ? 'Intervention' : 'Periodique';
+  const filename = `CDil_${typeSlug}_${session.date}.csv`;
+  triggerDownload(buildCsv(sessionToRows(session)), filename);
+}
+
+function exportAllToCsv(sessions: VisitSession[]) {
+  const sorted = [...sessions].sort((a, b) => a.date.localeCompare(b.date));
+  const allRows: string[][] = [];
+  sorted.forEach((s, i) => {
+    if (i > 0) allRows.push(Array(HEADERS.length).fill(''));
+    allRows.push(...sessionToRows(s));
+  });
+  triggerDownload(buildCsv(allRows), `CDil_Export_Complet.csv`);
 }
 
 export const CdilVisitPanel: React.FC<CdilVisitPanelProps> = ({ user }) => {
@@ -503,17 +529,27 @@ export const CdilVisitPanel: React.FC<CdilVisitPanelProps> = ({ user }) => {
       )}
 
       {/* Onglets */}
-      <div className="flex bg-white p-1 rounded-2xl shadow-sm border border-border mb-6 w-fit">
-        {([['DRAFT', 'En cours', drafts.length], ['COMPLETED', 'Historique', completed.length]] as const).map(([tab, label, count]) => (
+      <div className="flex items-center justify-between mb-6">
+        <div className="flex bg-white p-1 rounded-2xl shadow-sm border border-border w-fit">
+          {([['DRAFT', 'En cours', drafts.length], ['COMPLETED', 'Historique', completed.length]] as const).map(([tab, label, count]) => (
+            <button
+              key={tab}
+              onClick={() => setActiveTab(tab)}
+              className={`flex items-center gap-2 px-6 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === tab ? 'bg-primary text-white shadow-lg' : 'text-gray-400'}`}
+            >
+              {label}
+              <span className={`text-[9px] px-1.5 py-0.5 rounded-md font-black ${activeTab === tab ? 'bg-white/20' : 'bg-gray-100'}`}>{count}</span>
+            </button>
+          ))}
+        </div>
+        {activeTab === 'COMPLETED' && completed.length > 0 && (
           <button
-            key={tab}
-            onClick={() => setActiveTab(tab)}
-            className={`flex items-center gap-2 px-6 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === tab ? 'bg-primary text-white shadow-lg' : 'text-gray-400'}`}
+            onClick={() => exportAllToCsv(completed)}
+            className="flex items-center gap-2 px-5 py-3 bg-white border border-border rounded-2xl text-[10px] font-black uppercase tracking-widest text-gray-500 hover:text-primary hover:border-primary transition-all shadow-sm"
           >
-            {label}
-            <span className={`text-[9px] px-1.5 py-0.5 rounded-md font-black ${activeTab === tab ? 'bg-white/20' : 'bg-gray-100'}`}>{count}</span>
+            <Download size={14}/> Tout exporter
           </button>
-        ))}
+        )}
       </div>
 
       {loading ? (
