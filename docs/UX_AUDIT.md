@@ -68,7 +68,7 @@
 | ~~"Créer plusieurs exemplaires (Unitaires)" vs "Gérer en lot" — distinction pas évidente~~ | ManagementPanel | ✅ Description ajoutée sous chaque option |
 | ~~Passage vers checklist inattendu au clic "Marquer résolu"~~ | TicketPanel | ✅ Hint affiché sous le bouton quand une vérification est requise |
 | "Pris par un autre technicien" — pas de nom affiché | TicketPanel | Nécessite de stocker `assignedToName` dans le ticket (chantier CF) |
-| Grille de saisie CDil non utilisable sur mobile (scroll horizontal) | CdilVisitPanel | Refonte responsive — layout en cartes empilées sur petit écran |
+| ~~Grille de saisie CDil non utilisable sur mobile (scroll horizontal)~~ | CdilVisitPanel | ✅ Double layout : table sur desktop (md+), cartes empilées sur mobile |
 
 ### Mineurs
 

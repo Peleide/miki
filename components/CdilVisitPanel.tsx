@@ -254,99 +254,88 @@ export const CdilVisitPanel: React.FC<CdilVisitPanelProps> = ({ user }) => {
           ))}
         </div>
 
-        {/* Grille de saisie */}
-        <div className="bg-white border border-border rounded-[32px] overflow-hidden shadow-sm overflow-x-auto">
-          {/* En-tête */}
-          <div className="grid grid-cols-[1fr_100px_100px_100px_160px_80px] gap-0 bg-gray-50 border-b border-border min-w-[700px]">
+        {/* Grille de saisie — desktop */}
+        <div className="hidden md:block bg-white border border-border rounded-[32px] overflow-hidden shadow-sm">
+          <div className="grid grid-cols-[1fr_100px_100px_100px_160px_80px] gap-0 bg-gray-50 border-b border-border">
             {['Localisation / Service', 'Buse', 'Crépine', 'Ligne asp.', 'Remarques', 'Photos'].map(h => (
               <div key={h} className="px-4 py-4 text-[10px] font-black text-gray-400 uppercase tracking-widest">{h}</div>
             ))}
           </div>
-
           {entries.map((entry, idx) => (
-            <div key={entry.unitId || idx} className={`grid grid-cols-[1fr_100px_100px_100px_160px_80px] gap-0 border-b border-gray-50 hover:bg-primary/[0.02] transition-colors min-w-[700px] ${idx % 2 === 0 ? '' : 'bg-gray-50/30'}`}>
-              {/* Localisation */}
+            <div key={entry.unitId || idx} className={`grid grid-cols-[1fr_100px_100px_100px_160px_80px] gap-0 border-b border-gray-50 hover:bg-primary/[0.02] transition-colors ${idx % 2 === 0 ? '' : 'bg-gray-50/30'}`}>
               <div className="px-4 py-4">
                 <div className="font-black text-dark text-sm leading-none mb-1">{entry.location}</div>
-                <div className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">ID: {entry.serialNumber}</div>
+                <div className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">N° {entry.serialNumber}</div>
               </div>
-
-              {/* Buse */}
+              {(['buse', 'crepine', 'ligne'] as const).map(field => (
+                <div key={field} className="px-3 py-3 flex items-center">
+                  <select
+                    value={String(entry[field])}
+                    onChange={e => updateEntry(idx, field, e.target.value === 'ok' ? 'ok' : Number(e.target.value) as ComponentState)}
+                    className={`w-full text-[11px] font-black border rounded-xl px-2 py-2 outline-none cursor-pointer ${STATE_CLASS[String(entry[field])]}`}
+                  >
+                    <option value="ok">OK</option>
+                    <option value="1">1</option>
+                    <option value="2">2</option>
+                  </select>
+                </div>
+              ))}
               <div className="px-3 py-3 flex items-center">
-                <select
-                  value={String(entry.buse)}
-                  onChange={e => updateEntry(idx, 'buse', e.target.value === 'ok' ? 'ok' : Number(e.target.value) as ComponentState)}
-                  className={`w-full text-[11px] font-black border rounded-xl px-2 py-2 outline-none cursor-pointer ${STATE_CLASS[String(entry.buse)]}`}
-                >
-                  <option value="ok">OK</option>
-                  <option value="1">1</option>
-                  <option value="2">2</option>
-                </select>
+                <input type="text" value={entry.remarks || ''} onChange={e => updateEntry(idx, 'remarks', e.target.value)} placeholder="Remarques..." className="w-full text-xs font-medium border border-gray-200 rounded-xl px-3 py-2 outline-none focus:border-primary bg-white"/>
               </div>
-
-              {/* Crépine */}
-              <div className="px-3 py-3 flex items-center">
-                <select
-                  value={String(entry.crepine)}
-                  onChange={e => updateEntry(idx, 'crepine', e.target.value === 'ok' ? 'ok' : Number(e.target.value) as ComponentState)}
-                  className={`w-full text-[11px] font-black border rounded-xl px-2 py-2 outline-none cursor-pointer ${STATE_CLASS[String(entry.crepine)]}`}
-                >
-                  <option value="ok">OK</option>
-                  <option value="1">1</option>
-                  <option value="2">2</option>
-                </select>
-              </div>
-
-              {/* Ligne aspiration */}
-              <div className="px-3 py-3 flex items-center">
-                <select
-                  value={String(entry.ligne)}
-                  onChange={e => updateEntry(idx, 'ligne', e.target.value === 'ok' ? 'ok' : Number(e.target.value) as ComponentState)}
-                  className={`w-full text-[11px] font-black border rounded-xl px-2 py-2 outline-none cursor-pointer ${STATE_CLASS[String(entry.ligne)]}`}
-                >
-                  <option value="ok">OK</option>
-                  <option value="1">1</option>
-                  <option value="2">2</option>
-                </select>
-              </div>
-
-              {/* Remarques */}
-              <div className="px-3 py-3 flex items-center">
-                <input
-                  type="text"
-                  value={entry.remarks || ''}
-                  onChange={e => updateEntry(idx, 'remarks', e.target.value)}
-                  placeholder="Remarques..."
-                  className="w-full text-xs font-medium border border-gray-200 rounded-xl px-3 py-2 outline-none focus:border-primary bg-white"
-                />
-              </div>
-
-              {/* Photos */}
               <div className="px-2 py-3 flex items-center justify-center">
-                <button
-                  onClick={() => setPhotoModal(idx)}
-                  className="relative flex items-center justify-center gap-1.5 px-2.5 py-2 rounded-xl border border-gray-200 hover:border-primary hover:bg-primary/5 transition-all text-gray-400 hover:text-primary"
-                  title="Gérer les photos"
-                >
-                  {uploadingPhotoIdx === idx
-                    ? <Loader2 size={14} className="animate-spin text-primary"/>
-                    : <Camera size={14}/>
-                  }
-                  {(entry.photos?.length || 0) > 0 && (
-                    <span className="absolute -top-1.5 -right-1.5 text-[8px] font-black bg-primary text-white rounded-full w-4 h-4 flex items-center justify-center">
-                      {entry.photos!.length}
-                    </span>
-                  )}
+                <button onClick={() => setPhotoModal(idx)} className="relative flex items-center justify-center gap-1.5 px-2.5 py-2 rounded-xl border border-gray-200 hover:border-primary hover:bg-primary/5 transition-all text-gray-400 hover:text-primary">
+                  {uploadingPhotoIdx === idx ? <Loader2 size={14} className="animate-spin text-primary"/> : <Camera size={14}/>}
+                  {(entry.photos?.length || 0) > 0 && <span className="absolute -top-1.5 -right-1.5 text-[8px] font-black bg-primary text-white rounded-full w-4 h-4 flex items-center justify-center">{entry.photos!.length}</span>}
                 </button>
               </div>
             </div>
           ))}
-
           {entries.length === 0 && (
-            <div className="py-16 text-center text-gray-400 font-medium text-sm">
-              Aucune unité CDil active à renseigner. Ajoutez des unités dans Gestion → Centrales.
-            </div>
+            <div className="py-16 text-center text-gray-400 font-medium text-sm">Aucune unité CDil active à renseigner. Ajoutez des unités dans Gestion → Centrales.</div>
           )}
+        </div>
+
+        {/* Cartes de saisie — mobile */}
+        <div className="md:hidden space-y-3">
+          {entries.length === 0 && (
+            <div className="py-16 text-center text-gray-400 font-medium text-sm bg-white border border-border rounded-[24px]">Aucune unité CDil active à renseigner.</div>
+          )}
+          {entries.map((entry, idx) => (
+            <div key={entry.unitId || idx} className="bg-white border border-border rounded-[24px] p-4 shadow-sm">
+              {/* En-tête de la carte */}
+              <div className="flex items-start justify-between mb-4">
+                <div>
+                  <div className="font-black text-dark text-sm leading-none mb-1">{entry.location}</div>
+                  <div className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">N° {entry.serialNumber}</div>
+                </div>
+                <button onClick={() => setPhotoModal(idx)} className="relative flex items-center gap-1.5 px-3 py-2 rounded-xl border border-gray-200 hover:border-primary hover:bg-primary/5 transition-all text-gray-400 hover:text-primary text-[10px] font-black uppercase tracking-widest">
+                  {uploadingPhotoIdx === idx ? <Loader2 size={13} className="animate-spin text-primary"/> : <Camera size={13}/>}
+                  Photos
+                  {(entry.photos?.length || 0) > 0 && <span className="absolute -top-1.5 -right-1.5 text-[8px] font-black bg-primary text-white rounded-full w-4 h-4 flex items-center justify-center">{entry.photos!.length}</span>}
+                </button>
+              </div>
+              {/* Sélecteurs état */}
+              <div className="grid grid-cols-3 gap-2 mb-3">
+                {([['buse', 'Buse'], ['crepine', 'Crépine'], ['ligne', 'Ligne asp.']] as const).map(([field, label]) => (
+                  <div key={field}>
+                    <div className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1">{label}</div>
+                    <select
+                      value={String(entry[field])}
+                      onChange={e => updateEntry(idx, field, e.target.value === 'ok' ? 'ok' : Number(e.target.value) as ComponentState)}
+                      className={`w-full text-[11px] font-black border rounded-xl px-2 py-2 outline-none cursor-pointer ${STATE_CLASS[String(entry[field])]}`}
+                    >
+                      <option value="ok">OK</option>
+                      <option value="1">1</option>
+                      <option value="2">2</option>
+                    </select>
+                  </div>
+                ))}
+              </div>
+              {/* Remarques */}
+              <input type="text" value={entry.remarks || ''} onChange={e => updateEntry(idx, 'remarks', e.target.value)} placeholder="Remarques…" className="w-full text-xs font-medium border border-gray-200 rounded-xl px-3 py-2.5 outline-none focus:border-primary bg-white"/>
+            </div>
+          ))}
         </div>
 
         {/* Modale photos */}
