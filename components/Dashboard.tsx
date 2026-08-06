@@ -296,10 +296,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ user }) => {
                                                       <div className="font-black text-sm text-dark">{u.location}</div>
                                                       <div className="text-[10px] font-bold text-gray-400">{u.service} · {u.serialNumber}</div>
                                                   </div>
-                                                  <div className="flex gap-1">
+                                                  <div className="flex gap-1 flex-wrap">
                                                       {(['buse','crepine','ligne'] as const).filter(k => u.currentState && u.currentState[k] !== 'ok').map(k => (
-                                                          <span key={k} className="text-[9px] font-black px-1.5 py-0.5 rounded-md border bg-red-50 text-red-600 border-red-200">
-                                                              {k === 'buse' ? 'Buse' : k === 'crepine' ? 'Crép.' : 'Ligne'}:{String(u.currentState![k])}
+                                                          <span key={k} title={`${String(u.currentState![k])} remplacement(s) effectué(s)`} className="text-[9px] font-black px-1.5 py-0.5 rounded-md border bg-red-50 text-red-600 border-red-200">
+                                                              {k === 'buse' ? 'Buse' : k === 'crepine' ? 'Crép.' : 'Ligne'} ×{String(u.currentState![k])}
                                                           </span>
                                                       ))}
                                                   </div>

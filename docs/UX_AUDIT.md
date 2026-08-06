@@ -74,11 +74,11 @@
 
 | Problème | Composant | Notes |
 |----------|-----------|-------|
-| Notifications non groupées par type (WARNING / CRITICAL / INFO) | Layout | Groupement chronologique suffisant pour l'instant |
-| "SCAN" dans la navigation — peut évoquer autre chose que QR code | Layout | Envisager "QR / SCAN" ou icône seule |
-| États `ok/1/2` des centrales CDil non expliqués dans le widget Dashboard | Dashboard | Ajouter légende inline (identique à CdilVisitPanel) |
+| ~~Notifications non groupées par type~~ | Layout | ✅ Tri : non-lues en premier, puis CRITICAL > WARNING > INFO > date |
+| ~~"SCAN" dans la navigation~~ | Layout | ✅ Renommé "MATÉRIEL" (toutes les occurrences) |
+| ~~États `ok/1/2` CDil non expliqués dans le widget Dashboard~~ | Dashboard | ✅ Format `Buse ×1` + tooltip "1 remplacement(s) effectué(s)" |
 | Badge "En cours d'utilisation" redondant avec bordure colorée | AgentView | Cosmétique, non prioritaire |
-| Priorités ticket (LOW/MEDIUM/HIGH/CRITICAL) sans définition | TicketPanel | Ajouter un tooltip ou un guide de choix |
+| ~~Priorités ticket sans définition~~ | TicketPanel | ✅ Tooltip au survol : définition de chaque niveau (Faible → Critique) |
 
 ---
 

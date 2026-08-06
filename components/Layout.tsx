@@ -85,15 +85,15 @@ export const Layout: React.FC<LayoutProps> = ({
     navItems.push({ id: 'management', label: 'GESTION', icon: Settings });
     navItems.push({ id: 'dashboard', label: 'SUIVI', icon: LayoutDashboard });
     navItems.push({ id: 'tickets', label: 'TICKETS', icon: Wrench });
-    navItems.push({ id: 'agent', label: 'SCAN', icon: QrCode });
+    navItems.push({ id: 'agent', label: 'MATÉRIEL', icon: QrCode });
   } else if (user.role === UserRole.CLIENT) {
     navItems.push({ id: 'dashboard', label: 'SUIVI', icon: LayoutDashboard });
   } else if (user.role === UserRole.TECHNICIAN) {
     navItems.push({ id: 'tickets', label: 'TICKETS', icon: Wrench });
     navItems.push({ id: 'cdil', label: 'VISITES', icon: ClipboardList });
-    navItems.push({ id: 'agent', label: 'SCAN', icon: QrCode });
+    navItems.push({ id: 'agent', label: 'MATÉRIEL', icon: QrCode });
   } else if (user.role === UserRole.AGENT) {
-    navItems.push({ id: 'agent', label: 'SCAN', icon: QrCode });
+    navItems.push({ id: 'agent', label: 'MATÉRIEL', icon: QrCode });
   }
 
   const showSwitcher = availableTenants.length > 1;
@@ -189,7 +189,12 @@ export const Layout: React.FC<LayoutProps> = ({
                             {notifications.length === 0 ? (
                                 <div className="p-8 text-center text-gray-400 text-sm font-bold">Aucune notification</div>
                             ) : (
-                                notifications.map(n => (
+                                [...notifications].sort((a, b) => {
+                                    if (a.read !== b.read) return a.read ? 1 : -1;
+                                    const rank = (t: string) => t === 'CRITICAL' ? 0 : t === 'WARNING' ? 1 : 2;
+                                    if (rank(a.type) !== rank(b.type)) return rank(a.type) - rank(b.type);
+                                    return b.timestamp.localeCompare(a.timestamp);
+                                }).map(n => (
                                     <div key={n.id} onClick={() => !n.read && db.markNotificationRead(user.id, n.id)} className={`p-4 border-b border-border last:border-0 transition-colors ${!n.read ? 'bg-primary/5 cursor-pointer' : 'bg-white opacity-80'}`}>
                                         <div className="flex gap-3">
                                             <div className="mt-1 shrink-0">

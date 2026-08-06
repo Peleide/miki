@@ -9,6 +9,12 @@ interface TicketPanelProps {
 }
 
 const PRIORITY_LABEL: Record<string, string> = { LOW: 'Faible', MEDIUM: 'Moyen', HIGH: 'Haute', CRITICAL: 'Critique' };
+const PRIORITY_TITLE: Record<string, string> = {
+  LOW: 'Faible — à planifier, pas urgent',
+  MEDIUM: 'Moyen — à traiter dans les prochains jours',
+  HIGH: 'Haute — équipement partiellement opérationnel',
+  CRITICAL: 'Critique — équipement hors service, intervention immédiate',
+};
 const PRIORITY_CLASS: Record<string, string> = {
   LOW: 'bg-gray-100 text-gray-500',
   MEDIUM: 'bg-warning/10 text-warning',
@@ -199,7 +205,7 @@ export const TicketPanel: React.FC<TicketPanelProps> = ({ user }) => {
                   </div>
                 </div>
                 <span className={`ml-2 shrink-0 text-[8px] font-black uppercase tracking-wider px-2 py-1 rounded-lg ${PRIORITY_CLASS[ticket.priority] || 'bg-gray-100 text-gray-400'}`}>
-                  {PRIORITY_LABEL[ticket.priority] || ticket.priority}
+                  <span title={PRIORITY_TITLE[ticket.priority]}>{PRIORITY_LABEL[ticket.priority] || ticket.priority}</span>
                 </span>
               </div>
               <div className="flex flex-wrap gap-1.5 mb-3 mt-3">
@@ -264,7 +270,7 @@ export const TicketPanel: React.FC<TicketPanelProps> = ({ user }) => {
                   <span className={`text-[9px] font-black uppercase tracking-widest px-2.5 py-1.5 rounded-lg ${STATUS_CLASS[selectedTicket.status]}`}>
                     {STATUS_LABEL[selectedTicket.status]}
                   </span>
-                  <span className={`text-[9px] font-black uppercase tracking-widest px-2.5 py-1.5 rounded-lg ${PRIORITY_CLASS[selectedTicket.priority] || 'bg-gray-100 text-gray-400'}`}>
+                  <span title={PRIORITY_TITLE[selectedTicket.priority]} className={`text-[9px] font-black uppercase tracking-widest px-2.5 py-1.5 rounded-lg ${PRIORITY_CLASS[selectedTicket.priority] || 'bg-gray-100 text-gray-400'}`}>
                     {PRIORITY_LABEL[selectedTicket.priority] || selectedTicket.priority}
                   </span>
                 </div>
