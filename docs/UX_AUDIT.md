@@ -84,6 +84,6 @@
 
 ## Chantiers liés (voir aussi ROLES_PERMISSIONS.md)
 
-- 🔄 **Restitution forcée MANAGER** — permettre de remettre un équipement à "Disponible" depuis le ManagementPanel sans scan QR
+- ✅ **Restitution forcée MANAGER** — bouton LogIn (orange) sur cartes IN_USE + CF FORCE_RETURN + méthode db.forceReturnEquipment()
 - 🔄 **Multi-tenant TECHNICIAN** — un technicien accède à plusieurs établissements avec un seul compte
 - 🔄 **Responsive CDil mobile** — refonte de la grille de saisie pour usage terrain sur téléphone
