@@ -171,18 +171,19 @@ export const Dashboard: React.FC<DashboardProps> = ({ user }) => {
           </div>
 
           <div className="hidden lg:flex flex-1 items-center justify-center gap-3">
-             {activeTab === 'incidentReports' ? (
+             {activeTab === 'incidentReports' && (
                 <div className="flex bg-gray-50 p-1 rounded-full border border-gray-200">
                     <button onClick={() => setReportStatusFilter('OPEN')} className={`px-5 py-2 rounded-full text-[10px] font-black uppercase tracking-widest transition-all ${reportStatusFilter === 'OPEN' ? 'bg-white shadow-sm text-primary' : 'text-gray-400 hover:text-dark'}`}>Ouverts</button>
                     <button onClick={() => setReportStatusFilter('ARCHIVED')} className={`px-5 py-2 rounded-full text-[10px] font-black uppercase tracking-widest transition-all ${reportStatusFilter === 'ARCHIVED' ? 'bg-white shadow-sm text-primary' : 'text-gray-400 hover:text-dark'}`}>Archivés</button>
                 </div>
-             ) : (
+             )}
+             {activeTab === 'logs' && (
                 <div className="relative flex items-center gap-1">
-                    <button onClick={() => setFilterStartDate(shiftDate(filterStartDate, -1)) || setFilterEndDate(shiftDate(filterEndDate, -1))} className="p-2 text-gray-300 hover:text-primary transition-colors"><ChevronLeft size={24} /></button>
+                    <button onClick={() => { setFilterStartDate(shiftDate(filterStartDate, -1)); setFilterEndDate(shiftDate(filterEndDate, -1)); }} className="p-2 text-gray-300 hover:text-primary transition-colors"><ChevronLeft size={24} /></button>
                     <div className="bg-white border border-border px-6 py-2.5 rounded-full text-sm font-black text-dark tabular-nums tracking-tighter shadow-sm">
                         {filterStartDate === filterEndDate ? new Date(filterStartDate).toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' }) : `${filterStartDate} - ${filterEndDate}`}
                     </div>
-                    <button onClick={() => setFilterStartDate(shiftDate(filterStartDate, 1)) || setFilterEndDate(shiftDate(filterEndDate, 1))} className="p-2 text-gray-300 hover:text-primary transition-colors"><ChevronRight size={24} /></button>
+                    <button onClick={() => { setFilterStartDate(shiftDate(filterStartDate, 1)); setFilterEndDate(shiftDate(filterEndDate, 1)); }} disabled={filterStartDate >= todayStr} className="p-2 text-gray-300 hover:text-primary transition-colors disabled:opacity-30 disabled:cursor-not-allowed"><ChevronRight size={24} /></button>
                 </div>
              )}
           </div>
