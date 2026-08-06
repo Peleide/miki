@@ -1400,16 +1400,16 @@ export const ManagementPanel: React.FC<ManagementPanelProps> = ({ user }) => {
               <p className="text-xs text-gray-400 mb-6">Laisser à 0 pour désactiver le paramètre.</p>
               <div className="space-y-4">
                 <div>
-                  <label className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-2 block">Délai min. entre 2 scans (secondes)</label>
+                  <label className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-2 block">Délai minimum entre 2 emprunts (secondes)</label>
                   <input type="number" min="0" value={settingsMinDelay} onChange={e => setSettingsMinDelay(Number(e.target.value))} className="w-full p-4 bg-gray-50 border rounded-2xl text-xs font-bold outline-none focus:border-primary"/>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-2 block">Max scans par fenêtre</label>
+                    <label className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-2 block">Nb max d'emprunts par période</label>
                     <input type="number" min="0" value={settingsMaxCheckins} onChange={e => setSettingsMaxCheckins(Number(e.target.value))} className="w-full p-4 bg-gray-50 border rounded-2xl text-xs font-bold outline-none focus:border-primary"/>
                   </div>
                   <div>
-                    <label className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-2 block">Fenêtre (secondes)</label>
+                    <label className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-2 block">Durée de la période (secondes)</label>
                     <input type="number" min="0" value={settingsRateWindow} onChange={e => setSettingsRateWindow(Number(e.target.value))} className="w-full p-4 bg-gray-50 border rounded-2xl text-xs font-bold outline-none focus:border-primary"/>
                   </div>
                 </div>

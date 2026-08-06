@@ -417,8 +417,9 @@ export const TicketPanel: React.FC<TicketPanelProps> = ({ user }) => {
                     </button>
                   )}
                   {selectedTicket.assignedTo !== user.id && !isManager && (
-                    <div className="flex-1 py-4 text-center text-[10px] font-black text-gray-300 uppercase tracking-widest bg-gray-50 rounded-2xl border">
-                      Pris par un autre technicien
+                    <div className="flex-1 py-4 text-center bg-gray-50 rounded-2xl border flex flex-col items-center justify-center gap-1">
+                      <span className="text-[10px] font-black text-gray-300 uppercase tracking-widest">Pris en charge par un autre technicien</span>
+                      <span className="text-[9px] text-gray-300 normal-case tracking-normal">Contactez votre responsable si nécessaire</span>
                     </div>
                   )}
                 </div>

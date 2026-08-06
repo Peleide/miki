@@ -598,7 +598,7 @@ export const AgentView: React.FC<AgentViewProps> = ({ user, isOnline, onModeChan
                     
                     {(!isUserActiveElsewhere || selectedEq.isBatch) && (selectedEq.status === 'AVAILABLE' || selectedEq.isBatch) && sites.length > 0 && (
                         <div className="mb-6 space-y-2">
-                            <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Chantier (Destination)</label>
+                            <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Site de destination</label>
                             <div className="relative">
                                 <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-primary"><MapPin size={18}/></div>
                                 <select 

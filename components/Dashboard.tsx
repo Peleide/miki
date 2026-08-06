@@ -159,10 +159,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ user }) => {
                     <Activity size={16}/> Vue d'ensemble
                 </button>
                 <button onClick={() => {setActiveTab('equipments'); setSelectedEquipment(null);}} className={`flex items-center gap-2 px-5 py-3 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] transition-all whitespace-nowrap ${activeTab === 'equipments' ? 'bg-white shadow-sm text-primary' : 'text-gray-400 hover:bg-gray-100'}`}>
-                    <Box size={16}/> Objets & Suivi
+                    <Box size={16}/> Équipements
                 </button>
                 <button onClick={() => {setActiveTab('logs'); setSelectedEquipment(null);}} className={`flex items-center gap-2 px-5 py-3 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] transition-all whitespace-nowrap ${activeTab === 'logs' ? 'bg-white shadow-sm text-primary' : 'text-gray-400 hover:bg-gray-100'}`}>
-                    <Database size={16}/> Historique Global
+                    <Database size={16}/> Mouvements
                 </button>
                 <button onClick={() => {setActiveTab('incidentReports'); setSelectedEquipment(null);}} className={`flex items-center gap-2 px-5 py-3 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] transition-all whitespace-nowrap ${activeTab === 'incidentReports' ? 'bg-white shadow-sm text-primary' : 'text-gray-400 hover:bg-gray-100'}`}>
                     <AlertTriangle size={16}/> Tickets {incidentReports.filter(r=>r.status==='OPEN').length > 0 && <span className="bg-danger text-white px-1.5 py-0.5 rounded-md text-[8px]">{incidentReports.filter(r=>r.status==='OPEN').length}</span>}
