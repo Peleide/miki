@@ -504,19 +504,21 @@ export const Dashboard: React.FC<DashboardProps> = ({ user }) => {
                                           </div>
                                       )}
                                       <div className={`px-6 py-4 rounded-3xl border text-center ${selectedEquipment.lastVisiteTechniqueDate ? 'bg-success/5 border-success/20' : 'bg-gray-50 border-gray-100'}`}>
-                                          <div className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-1">Visite Technique</div>
-                                          <div className="text-sm font-black text-dark mt-2">
+                                          <div className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-1">Maintenance préventive</div>
+                                          <div className="text-[9px] text-gray-300 mb-1">Dernier passage technique</div>
+                                          <div className="text-sm font-black text-dark mt-1">
                                               {selectedEquipment.lastVisiteTechniqueDate
                                                   ? TimeUtils.formatInTimezone(selectedEquipment.lastVisiteTechniqueDate, timezone, { dateStyle: 'short' })
-                                                  : 'Non'}
+                                                  : '—'}
                                           </div>
                                       </div>
                                       <div className={`px-6 py-4 rounded-3xl border text-center ${selectedEquipment.lastReparationDate ? 'bg-orange-50 border-orange-100' : 'bg-gray-50 border-gray-100'}`}>
-                                          <div className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-1">Réparation</div>
-                                          <div className="text-sm font-black text-dark mt-2">
+                                          <div className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-1">Dernière réparation</div>
+                                          <div className="text-[9px] text-gray-300 mb-1">Suite à incident ou ticket</div>
+                                          <div className="text-sm font-black text-dark mt-1">
                                               {selectedEquipment.lastReparationDate
                                                   ? TimeUtils.formatInTimezone(selectedEquipment.lastReparationDate, timezone, { dateStyle: 'short' })
-                                                  : 'Non'}
+                                                  : '—'}
                                           </div>
                                       </div>
                                       {selectedEquipment.createdAt && (

@@ -541,7 +541,7 @@ export const CdilVisitPanel: React.FC<CdilVisitPanelProps> = ({ user }) => {
                   </p>
                 </div>
                 <span className={`text-[9px] font-black px-2 py-1 rounded-lg uppercase tracking-widest shrink-0 ${session.status === 'DRAFT' ? 'bg-orange-100 text-orange-600' : 'bg-success/10 text-success'}`}>
-                  {session.status === 'DRAFT' ? 'Brouillon' : 'Clôturée'}
+                  {session.status === 'DRAFT' ? 'En cours' : 'Terminée'}
                 </span>
               </div>
 
@@ -595,7 +595,7 @@ export const CdilVisitPanel: React.FC<CdilVisitPanelProps> = ({ user }) => {
             <div className="col-span-full py-20 bg-gray-50 border-2 border-dashed border-gray-200 rounded-[32px] text-center">
               <ClipboardList size={48} className="mx-auto text-gray-300 mb-4 opacity-50"/>
               <p className="text-gray-400 font-bold uppercase tracking-widest text-xs">
-                {activeTab === 'DRAFT' ? 'Aucune visite en cours' : 'Aucune visite clôturée'}
+                {activeTab === 'DRAFT' ? 'Aucune visite en cours' : 'Aucune visite terminée'}
               </p>
             </div>
           )}

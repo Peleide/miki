@@ -624,9 +624,9 @@ export const ManagementPanel: React.FC<ManagementPanelProps> = ({ user }) => {
                     {/* Nomenclature preview */}
                     {!editingEq && eqCategoryCode && eqStorageLocation && (
                         <div className="px-4 py-3 bg-primary/5 border border-primary/20 rounded-2xl">
-                            <p className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-1">Nom auto-généré</p>
+                            <p className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-1">Identifiant généré automatiquement</p>
                             <p className="text-sm font-black text-primary">{eqCategoryCode}___{new Date().toISOString().slice(0,7).replace('-','')}_{eqStorageLocation}</p>
-                            <p className="text-[9px] text-gray-400 mt-1">Le numéro de séquence sera attribué par le serveur.</p>
+                            <p className="text-[9px] text-gray-400 mt-1">Cet identifiant est imprimé sur le QR code de l'équipement. Le numéro d'ordre final sera attribué à l'enregistrement.</p>
                         </div>
                     )}
 

@@ -79,7 +79,7 @@ export const AgentView: React.FC<AgentViewProps> = ({ user, isOnline, onModeChan
         () => {} 
       );
     } catch (err) { 
-      setScannerError("La caméra est inaccessible. Vérifiez les autorisations."); 
+      setScannerError("Caméra inaccessible");
     }
   };
 
@@ -384,9 +384,12 @@ export const AgentView: React.FC<AgentViewProps> = ({ user, isOnline, onModeChan
                  <div className="text-danger">
                    <AlertTriangle size={48} className="mx-auto mb-4" />
                    <p className="font-black text-xs uppercase tracking-widest leading-relaxed">{scannerError}</p>
+                   <p className="text-white/60 text-[11px] mt-3 leading-relaxed normal-case tracking-normal">
+                     Pour autoriser la caméra : ouvrez les paramètres de votre navigateur, recherchez les autorisations de caméra pour ce site et sélectionnez "Autoriser".
+                   </p>
                    <div className="flex flex-col gap-3 mt-8">
                     <button onClick={startScanner} className="bg-primary text-white px-8 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2">
-                      <RefreshCw size={14} /> Relancer Caméra
+                      <RefreshCw size={14} /> Réessayer
                     </button>
                     <button onClick={() => handleModeChange('list')} className="bg-white/10 text-white px-8 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest">Retour liste</button>
                    </div>
