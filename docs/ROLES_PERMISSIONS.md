@@ -44,10 +44,10 @@ L'ADMIN a un accès illimité à l'ensemble de la plateforme. Il crée et config
 **Ce qu'il ne peut pas faire**
 Rien de bloqué côté système. L'ADMIN est le niveau d'accès maximum.
 
-**Questions ouvertes**
-- L'ADMIN doit-il avoir accès aux données métier des tenants (équipements, tickets, visites CDil) ou uniquement à la couche d'administration ? Actuellement il y a accès — est-ce souhaité ?
-- Faut-il un log d'audit des actions de l'ADMIN lui-même, séparé des actions tenant ?
-- Un seul ADMIN suffit-il ou faut-il prévoir plusieurs comptes ADMIN distincts (ex : un par collaborateur Clean&Tech) ?
+**Arbitrages**
+- ✅ L'ADMIN a accès aux données métier des établissements (équipements, tickets, visites CDil) — nécessaire pour le support terrain. À documenter dans les conditions d'utilisation côté client.
+- ✅ Un compte ADMIN par personne Clean&Tech — le journal d'audit devient inutile si plusieurs personnes partagent un seul login.
+- ❓ Log d'audit séparé pour les actions ADMIN — en attente de confirmation, non prioritaire.
 
 ---
 
@@ -62,10 +62,10 @@ Le MANAGER administre l'intégralité de son espace établissement (tenant) : il
 **Ce qu'il ne peut pas faire**
 Il ne peut pas modifier un compte ADMIN plateforme. Il n'a pas accès aux audit_logs complets (réservés à l'ADMIN). Il ne peut pas créer de nouveaux espaces établissement (tenants).
 
-**Questions ouvertes**
-- Le MANAGER doit-il pouvoir supprimer définitivement des équipements, ou uniquement archiver ? Aujourd'hui seul l'archivage est possible.
-- Faut-il distinguer un rôle "MANAGER lecture seule" (chef de service qui consulte sans modifier) d'un "MANAGER admin" (qui gère les comptes) ? Aujourd'hui il n'y a qu'un seul niveau MANAGER.
-- Le MANAGER peut-il voir les données d'un autre espace établissement si un utilisateur appartient à plusieurs ? À clarifier pour les organisations multi-sites.
+**Arbitrages**
+- ✅ L'archivage suffit, pas de suppression définitive — l'historique d'un équipement (emprunts, maintenances, incidents) doit rester consultable pour la traçabilité.
+- ✅ Un seul niveau MANAGER pour l'instant — le rôle CLIENT couvre déjà le besoin "lecture seule dashboard". Un second niveau MANAGER ne sera ajouté que si le besoin est formellement exprimé.
+- ✅ Un MANAGER par établissement — le multi-sites est une évolution future, non prioritaire en v1.
 
 ---
 
@@ -80,10 +80,10 @@ Le TECHNICIAN gère les tickets de maintenance : il change leur statut (En cours
 **Ce qu'il ne peut pas faire**
 Il ne peut pas archiver de tickets (action MANAGER). Il n'a pas accès à la gestion des comptes utilisateurs, des équipements (création/modification/archivage), ni aux paramètres du tenant.
 
-**Questions ouvertes**
-- Le TECHNICIAN doit-il pouvoir **créer et modifier des unités CDil**, ou uniquement réaliser des visites sur des unités déjà configurées par le MANAGER ? Actuellement il le peut — ce périmètre est-il voulu ?
-- Un technicien intervient parfois sur plusieurs établissements. Faut-il lui permettre de basculer entre plusieurs espaces établissement (tenants), comme l'ADMIN le fait ? Aujourd'hui ce n'est pas possible.
-- Faut-il que le TECHNICIAN puisse clôturer un ticket sans passer par le MANAGER, ou la résolution doit-elle toujours être validée par un MANAGER ?
+**Arbitrages**
+- ✅ Le TECH peut créer et modifier des unités CDil — c'est lui qui est physiquement sur le terrain lors des installations, il serait contre-productif de le bloquer.
+- ✅ Le TECH clôture un ticket seul, sans validation MANAGER obligatoire — une validation systématique bloquerait les flux si le MANAGER est indisponible. Le MANAGER peut toujours rouvrir après coup.
+- 🔄 Multi-établissements : un technicien Clean&Tech intervient sur plusieurs sites — le modèle cible est **un compte par technicien avec accès à plusieurs établissements**. La structure de données est prête (`accessibleTenantIds[]`) mais la logique applicative (sélecteur d'établissement à la connexion, gardes CF multi-tenant) reste à implémenter. Chantier prioritaire.
 
 ---
 
@@ -98,11 +98,11 @@ L'AGENT scanne un QR code d'équipement et peut l'emprunter (TAKE), le restituer
 **Ce qu'il ne peut pas faire**
 Il n'a accès à aucune vue de gestion. Il ne voit pas les tickets, ne consulte pas le dashboard, n'interagit pas avec les CDil. Il ne reçoit pas de notifications.
 
-**Questions ouvertes**
-- L'AGENT doit-il recevoir une confirmation visuelle ou une notification après un emprunt/restitution réussi, au-delà du toast actuel ?
-- Faut-il permettre à l'AGENT de voir l'historique de ses propres emprunts ?
-- Un AGENT peut-il signaler un problème sans emprunter l'équipement (REPORT direct sur un équipement AVAILABLE) ? Actuellement oui — est-ce souhaité ?
-- Un AGENT emprunte un équipement : que se passe-t-il s'il n'a pas le téléphone pour le restituer ? Y a-t-il un process de restitution forcée par un MANAGER ?
+**Arbitrages**
+- ✅ Pas de notification email après emprunt/restitution — le toast à l'écran suffit. Une notif par action serait du bruit pour un agent de terrain.
+- ✅ Pas d'historique d'emprunts pour l'AGENT — le matériel est partagé entre collègues, la notion de "mes emprunts" est floue. Le MANAGER voit tout depuis le dashboard.
+- ✅ Le signalement sans emprunt est conservé (REPORT sur un équipement AVAILABLE) — cas de sécurité important : un agent qui voit un équipement défaillant doit pouvoir le signaler immédiatement sans passer par un emprunt.
+- 🔄 Restitution forcée par le MANAGER — chantier à implémenter : le MANAGER doit pouvoir forcer la remise à disposition d'un équipement depuis l'interface de gestion (sans scanner le QR ni contacter l'agent d'origine). Cas fréquent en fin de poste.
 
 ---
 
@@ -117,11 +117,11 @@ Le CLIENT accède uniquement au dashboard en lecture seule : il voit les métriq
 **Ce qu'il ne peut pas faire**
 Il ne peut exécuter aucune action — pas d'emprunt, pas de ticket, pas de signalement. Il n'a pas de barre de navigation. Il ne reçoit aucune notification.
 
-**Questions ouvertes**
-- Le CLIENT doit-il pouvoir **soumettre un incident** (ex : signaler un dysfonctionnement constaté lors d'une visite) ? Ce serait une action légère sans accès à la gestion.
-- Faut-il lui donner accès à un **export** des données du dashboard (PDF ou CSV de synthèse mensuelle) ?
-- Le CLIENT voit actuellement toutes les données du tenant — faut-il restreindre sa vue à certains services ou catégories d'équipements seulement ?
-- Y a-t-il un besoin de **notifications passives** pour le CLIENT (ex : alerte si le taux de maintenance dépasse un seuil) ?
+**Arbitrages**
+- ✅ Pas de signalement pour le CLIENT — si quelqu'un a besoin de signaler des problèmes, on lui attribue le rôle AGENT. CLIENT = lecture seule sans exception.
+- ✅ Vue complète de l'établissement, pas de restriction par service — le filtrage par service/catégorie ajouterait une complexité disproportionnée par rapport au besoin. Si la demande est formellement exprimée, on l'adresse à ce moment-là.
+- ✅ Pas d'alertes automatiques pour l'instant — le CLIENT qui veut suivre l'état du parc se connecte au dashboard.
+- 🔄 Export du dashboard (PDF ou CSV mensuel) — besoin légitime pour des bilans ou réunions, à implémenter en évolution future.
 
 ---
 
@@ -239,10 +239,14 @@ Il ne peut exécuter aucune action — pas d'emprunt, pas de ticket, pas de sign
 
 ---
 
-## Zones d'évolution identifiées
+## Chantiers identifiés
 
-- [ ] **CLIENT** : rôle défini mais sans aucune CF accessible — à préciser si des actions légères sont souhaitées (ex : soumettre un incident)
-- [ ] **TECHNICIAN et CDil CREATE** : le TECH peut créer des unités CDil — à valider si ce périmètre est voulu ou s'il doit être restreint au MANAGER
-- [ ] **Photos CDil** : upload Firebase Storage autorisé à tout utilisateur authentifié (règle large) — à resserrer si besoin
-- [ ] **Patron visite autres équipements** : colonnes métier à définir avant d'étendre le système CDil
-- [ ] **Notifications CLIENT** : non implémenté — à décider
+> Légende : 🔴 Prioritaire · 🟡 Moyen terme · 🟢 Évolution future
+
+- 🔴 **Multi-tenant TECHNICIAN** : un technicien Clean&Tech doit pouvoir basculer entre plusieurs établissements avec un seul compte. Structure de données prête (`accessibleTenantIds[]`), logique applicative (sélecteur d'établissement, gardes CF) à implémenter.
+- 🔴 **Restitution forcée MANAGER** : permettre au MANAGER de forcer la remise à disposition d'un équipement depuis le ManagementPanel, sans passer par le scan QR ni contacter l'agent.
+- 🟡 **Export dashboard CLIENT** : PDF ou CSV de synthèse mensuelle pour les décideurs (directeurs, référents qualité).
+- 🟡 **Photos CDil** : upload Firebase Storage dans les entrées de visite — champ `photos[]` déjà prévu dans `VisitEntry`, implémentation Storage à faire.
+- 🟡 **Patron visite autres équipements** : étendre le système CDil (sessions + export CSV) aux autres types d'équipements — colonnes métier à définir au cas par cas.
+- 🟢 **Audit ADMIN séparé** : log dédié aux actions de l'ADMIN lui-même, distinct du journal des actions tenant.
+- 🟢 **Rapport PDF structuré** : bilan enrichi (PDF ou Excel) pour les sessions CDil et l'historique de maintenance.
