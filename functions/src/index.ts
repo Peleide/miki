@@ -673,7 +673,10 @@ export const submitReport = functions
     if (action === "UPDATE_STATUS") {
       const { user: actorData } = await verifyAccess(context.auth.uid, tenantId, ["TECHNICIAN", "MANAGER", "ADMIN"]);
       const updateData: any = { status: incidentReport.status };
-      if (incidentReport.assignedTo !== undefined) updateData.assignedTo = incidentReport.assignedTo;
+      if (incidentReport.assignedTo !== undefined) {
+        updateData.assignedTo = incidentReport.assignedTo;
+        updateData.assignedToName = `${actorData.firstName} ${actorData.lastName}`;
+      }
       if (incidentReport.resolutionNote !== undefined) updateData.resolutionNote = incidentReport.resolutionNote;
       if (incidentReport.status === 'RESOLVED' || incidentReport.status === 'ARCHIVED') {
         updateData.resolutionTimestamp = new Date().toISOString();

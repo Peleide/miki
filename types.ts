@@ -262,7 +262,8 @@ export interface IncidentReport { // Ticketing System
   equipmentId: string;
   userId: string; // reportedBy
   
-  assignedTo?: string; // Technician ID
+  assignedTo?: string;
+  assignedToName?: string;
   
   equipmentNameSnapshot: string;
   userNameSnapshot: string;
