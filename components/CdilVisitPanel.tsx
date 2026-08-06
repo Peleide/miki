@@ -81,6 +81,7 @@ export const CdilVisitPanel: React.FC<CdilVisitPanelProps> = ({ user }) => {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [activeTab, setActiveTab] = useState<'DRAFT' | 'COMPLETED'>('DRAFT');
+  const [filterYear, setFilterYear] = useState<string>('all');
 
   const [newTitle, setNewTitle] = useState('');
   const [newDate, setNewDate] = useState(new Date().toISOString().split('T')[0]);
@@ -214,7 +215,14 @@ export const CdilVisitPanel: React.FC<CdilVisitPanelProps> = ({ user }) => {
 
   const handleComplete = async () => {
     if (!activeSession) return;
-    const ok = await confirm({ title: 'Clôturer la visite', message: 'Les états de chaque centrale seront mis à jour. Cette action est irréversible.', confirmLabel: 'Clôturer', variant: 'danger' });
+    const nbOk     = entries.filter(e => String(e.buse) === 'ok' && String(e.crepine) === 'ok' && String(e.ligne) === 'ok').length;
+    const nbSimple = entries.filter(e => [String(e.buse), String(e.crepine), String(e.ligne)].includes('1') && ![String(e.buse), String(e.crepine), String(e.ligne)].includes('2')).length;
+    const nbDouble = entries.filter(e => [String(e.buse), String(e.crepine), String(e.ligne)].includes('2')).length;
+    const summaryParts = [`${entries.length} centrale${entries.length > 1 ? 's' : ''} visitée${entries.length > 1 ? 's' : ''}`];
+    if (nbOk > 0)     summaryParts.push(`${nbOk} OK`);
+    if (nbSimple > 0) summaryParts.push(`${nbSimple} avec 1 remplacement`);
+    if (nbDouble > 0) summaryParts.push(`${nbDouble} avec 2 remplacements`);
+    const ok = await confirm({ title: 'Clôturer la visite', message: `${summaryParts.join(' · ')}.\n\nLes états de chaque centrale seront mis à jour. Cette action est irréversible.`, confirmLabel: 'Clôturer', variant: 'danger' });
     if (!ok) return;
     setSaving(true);
     try {
@@ -239,6 +247,8 @@ export const CdilVisitPanel: React.FC<CdilVisitPanelProps> = ({ user }) => {
 
   const drafts = sessions.filter(s => s.status === 'DRAFT');
   const completed = sessions.filter(s => s.status === 'COMPLETED');
+  const completedYears = [...new Set(completed.map(s => s.date.slice(0, 4)))].sort().reverse();
+  const filteredCompleted = filterYear === 'all' ? completed : completed.filter(s => s.date.startsWith(filterYear));
 
   // ── Formulaire de saisie d'une session ──
   if (view === 'fill' && activeSession) {
@@ -529,7 +539,7 @@ export const CdilVisitPanel: React.FC<CdilVisitPanelProps> = ({ user }) => {
       )}
 
       {/* Onglets */}
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between mb-4">
         <div className="flex bg-white p-1 rounded-2xl shadow-sm border border-border w-fit">
           {([['DRAFT', 'En cours', drafts.length], ['COMPLETED', 'Historique', completed.length]] as const).map(([tab, label, count]) => (
             <button
@@ -544,7 +554,7 @@ export const CdilVisitPanel: React.FC<CdilVisitPanelProps> = ({ user }) => {
         </div>
         {activeTab === 'COMPLETED' && completed.length > 0 && (
           <button
-            onClick={() => exportAllToCsv(completed)}
+            onClick={() => exportAllToCsv(filteredCompleted)}
             className="flex items-center gap-2 px-5 py-3 bg-white border border-border rounded-2xl text-[10px] font-black uppercase tracking-widest text-gray-500 hover:text-primary hover:border-primary transition-all shadow-sm"
           >
             <Download size={14}/> Tout exporter
@@ -552,11 +562,32 @@ export const CdilVisitPanel: React.FC<CdilVisitPanelProps> = ({ user }) => {
         )}
       </div>
 
+      {/* Filtre par année (onglet Historique uniquement) */}
+      {activeTab === 'COMPLETED' && completedYears.length > 1 && (
+        <div className="flex gap-2 mb-6 flex-wrap">
+          <button
+            onClick={() => setFilterYear('all')}
+            className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${filterYear === 'all' ? 'bg-primary text-white' : 'bg-white border border-border text-gray-400 hover:border-primary hover:text-primary'}`}
+          >
+            Toutes
+          </button>
+          {completedYears.map(y => (
+            <button
+              key={y}
+              onClick={() => setFilterYear(y)}
+              className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${filterYear === y ? 'bg-primary text-white' : 'bg-white border border-border text-gray-400 hover:border-primary hover:text-primary'}`}
+            >
+              {y}
+            </button>
+          ))}
+        </div>
+      )}
+
       {loading ? (
         <div className="py-20 flex justify-center"><Loader2 size={32} className="animate-spin text-primary"/></div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {(activeTab === 'DRAFT' ? drafts : completed).map(session => (
+          {(activeTab === 'DRAFT' ? drafts : filteredCompleted).map(session => (
             <div key={session.id} className="bg-white border rounded-[24px] p-6 shadow-sm hover:shadow-md transition-all">
               <div className="flex justify-between items-start mb-4">
                 <div>
@@ -616,11 +647,11 @@ export const CdilVisitPanel: React.FC<CdilVisitPanelProps> = ({ user }) => {
             </div>
           ))}
 
-          {(activeTab === 'DRAFT' ? drafts : completed).length === 0 && (
+          {(activeTab === 'DRAFT' ? drafts : filteredCompleted).length === 0 && (
             <div className="col-span-full py-20 bg-gray-50 border-2 border-dashed border-gray-200 rounded-[32px] text-center">
               <ClipboardList size={48} className="mx-auto text-gray-300 mb-4 opacity-50"/>
               <p className="text-gray-400 font-bold uppercase tracking-widest text-xs">
-                {activeTab === 'DRAFT' ? 'Aucune visite en cours' : 'Aucune visite terminée'}
+                {activeTab === 'DRAFT' ? 'Aucune visite en cours' : filterYear !== 'all' ? `Aucune visite terminée en ${filterYear}` : 'Aucune visite terminée'}
               </p>
             </div>
           )}
