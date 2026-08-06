@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import QRCode from 'react-qr-code';
 import { User, Equipment, Tenant, UserRole, WeeklySchedule, DaySchedule, Site, EquipmentType, CdilUnit, VisitSession, VisitEntry } from '../types';
 import { db } from '../services/db';
-import { Plus, QrCode, RefreshCw, Printer, X, Download, User as UserIcon, Box, Pencil, Search, Check, ListChecks, MapPin, KeyRound, Power, ClipboardList, Droplets, Loader2, ChevronLeft, ChevronRight, Settings2, ShieldCheck, Gauge, LogIn, UserPlus, UserMinus, Building2 } from 'lucide-react';
+import { Plus, QrCode, RefreshCw, Printer, X, Download, User as UserIcon, Box, Pencil, Search, Check, ListChecks, MapPin, KeyRound, Power, ClipboardList, Droplets, Loader2, ChevronLeft, ChevronRight, Settings2, ShieldCheck, Gauge, LogIn, UserPlus, UserMinus, Building2, History } from 'lucide-react';
 import { Logo } from './Logo';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
@@ -74,6 +74,7 @@ export const ManagementPanel: React.FC<ManagementPanelProps> = ({ user }) => {
   const [cdilUnits, setCdilUnits] = useState<CdilUnit[]>([]);
   const [cdilSessions, setCdilSessions] = useState<VisitSession[]>([]);
   const [cdilLoading, setCdilLoading] = useState(false);
+  const [selectedCdilUnit, setSelectedCdilUnit] = useState<CdilUnit | null>(null);
   const [cdilSerial, setCdilSerial] = useState('');
   const [cdilLocation, setCdilLocation] = useState('');
   const [cdilService, setCdilService] = useState('');
@@ -1368,13 +1369,18 @@ export const ManagementPanel: React.FC<ManagementPanelProps> = ({ user }) => {
                           <div className="text-[10px] font-bold text-gray-300 mt-1">Dernière visite: {new Date(unit.lastVisitDate).toLocaleDateString('fr-FR')}</div>
                         )}
                       </div>
-                      <div className="flex justify-end gap-2 pt-3 mt-3 border-t border-border">
-                        <button onClick={() => editCdilUnit(unit)} className="text-gray-400 hover:text-primary hover:bg-primary/5 p-2 rounded-xl transition-all" title="Modifier">
-                          <Pencil size={15}/>
+                      <div className="flex justify-between items-center pt-3 mt-3 border-t border-border">
+                        <button onClick={() => setSelectedCdilUnit(unit)} className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-gray-400 hover:text-primary transition-all px-2 py-1 rounded-xl hover:bg-primary/5" title="Voir l'historique">
+                          <History size={14}/> Historique
                         </button>
-                        <button onClick={() => handleDeactivateCdilUnit(unit.id)} className="text-danger hover:bg-red-50 p-2 rounded-xl transition-all" title="Désactiver">
-                          <X size={16}/>
-                        </button>
+                        <div className="flex gap-2">
+                          <button onClick={() => editCdilUnit(unit)} className="text-gray-400 hover:text-primary hover:bg-primary/5 p-2 rounded-xl transition-all" title="Modifier">
+                            <Pencil size={15}/>
+                          </button>
+                          <button onClick={() => handleDeactivateCdilUnit(unit.id)} className="text-danger hover:bg-red-50 p-2 rounded-xl transition-all" title="Désactiver">
+                            <X size={16}/>
+                          </button>
+                        </div>
                       </div>
                     </div>
                     )
@@ -1506,6 +1512,93 @@ export const ManagementPanel: React.FC<ManagementPanelProps> = ({ user }) => {
           </form>
         </div>
       )}
+
+      {/* Fiche unité CDil */}
+      {selectedCdilUnit && (() => {
+        const STATE_LBL: Record<string, string> = { ok: 'OK', '1': '1 remplacement', '2': '2 remplacements' };
+        const STATE_CLS: Record<string, string> = {
+          ok:  'bg-success/10 text-success border-success/20',
+          '1': 'bg-orange-50 text-orange-600 border-orange-200',
+          '2': 'bg-red-50 text-red-600 border-red-200',
+        };
+        const unitHistory = cdilSessions
+          .filter(s => s.status === 'COMPLETED' && s.entries.some(e => e.unitId === selectedCdilUnit.id))
+          .sort((a, b) => b.date.localeCompare(a.date));
+        return (
+          <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-6" onClick={() => setSelectedCdilUnit(null)}>
+            <div className="absolute inset-0 bg-black/40 backdrop-blur-sm"/>
+            <div className="relative w-full sm:max-w-lg bg-white rounded-t-[32px] sm:rounded-[32px] shadow-2xl flex flex-col max-h-[85vh]" onClick={e => e.stopPropagation()}>
+              {/* Header */}
+              <div className="p-6 border-b border-border flex items-start justify-between gap-4 shrink-0">
+                <div className="min-w-0">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-primary mb-1">Fiche unité</p>
+                  <h3 className="font-black text-dark text-lg leading-tight truncate">{selectedCdilUnit.location}</h3>
+                  <p className="text-xs font-bold text-gray-400 mt-0.5">{selectedCdilUnit.service} · N° {selectedCdilUnit.serialNumber}</p>
+                </div>
+                <button onClick={() => setSelectedCdilUnit(null)} className="shrink-0 p-2 text-gray-400 hover:text-dark hover:bg-gray-100 rounded-xl transition-all"><X size={18}/></button>
+              </div>
+
+              {/* État actuel */}
+              {selectedCdilUnit.currentState && (
+                <div className="px-6 py-4 border-b border-border shrink-0">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-3">État actuel</p>
+                  <div className="flex gap-3">
+                    {(['buse','crepine','ligne'] as const).map(k => {
+                      const v = String(selectedCdilUnit.currentState![k]);
+                      return (
+                        <div key={k} className={`flex-1 flex flex-col items-center py-3 rounded-2xl border ${STATE_CLS[v]}`}>
+                          <span className="text-[9px] font-black uppercase tracking-widest opacity-60 mb-1">{k === 'ligne' ? 'Ligne asp.' : k.charAt(0).toUpperCase() + k.slice(1)}</span>
+                          <span className="text-xs font-black">{STATE_LBL[v] ?? v}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Historique */}
+              <div className="flex-1 overflow-y-auto p-6 space-y-3 no-scrollbar">
+                <p className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-4">
+                  {unitHistory.length} visite{unitHistory.length !== 1 ? 's' : ''} enregistrée{unitHistory.length !== 1 ? 's' : ''}
+                </p>
+                {unitHistory.length === 0 && (
+                  <div className="py-12 text-center">
+                    <History size={32} className="mx-auto text-gray-200 mb-3"/>
+                    <p className="text-gray-400 text-xs font-bold uppercase tracking-widest">Aucune visite pour cette unité</p>
+                  </div>
+                )}
+                {unitHistory.map(session => {
+                  const entry = session.entries.find(e => e.unitId === selectedCdilUnit.id)!;
+                  return (
+                    <div key={session.id} className="bg-gray-50 rounded-[20px] p-4 border border-gray-100">
+                      <div className="flex items-center justify-between mb-3">
+                        <div>
+                          <p className="text-xs font-black text-dark">{new Date(session.date).toLocaleDateString('fr-FR', { day:'2-digit', month:'long', year:'numeric' })}</p>
+                          <p className="text-[10px] font-bold text-gray-400 mt-0.5">{session.technicianName} · <span className={session.sessionType === 'INTERVENTION' ? 'text-orange-500' : 'text-primary'}>{session.sessionType === 'INTERVENTION' ? 'Intervention' : 'Périodique'}</span></p>
+                        </div>
+                      </div>
+                      <div className="flex gap-2">
+                        {(['buse','crepine','ligne'] as const).map(k => {
+                          const v = String(entry[k]);
+                          return (
+                            <span key={k} className={`flex-1 text-center text-[9px] font-black px-2 py-1.5 rounded-xl border ${STATE_CLS[v]}`}>
+                              <span className="block opacity-60 uppercase tracking-widest mb-0.5">{k === 'ligne' ? 'Ligne' : k.charAt(0).toUpperCase() + k.slice(1)}</span>
+                              {STATE_LBL[v] ?? v}
+                            </span>
+                          );
+                        })}
+                      </div>
+                      {entry.remarks && (
+                        <p className="mt-3 text-xs text-gray-500 font-medium italic border-t border-gray-200 pt-2">{entry.remarks}</p>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {dialogNode}
     </div>
