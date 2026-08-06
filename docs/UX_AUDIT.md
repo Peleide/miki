@@ -85,5 +85,5 @@
 ## Chantiers liés (voir aussi ROLES_PERMISSIONS.md)
 
 - ✅ **Restitution forcée MANAGER** — bouton LogIn (orange) sur cartes IN_USE + CF FORCE_RETURN + méthode db.forceReturnEquipment()
-- 🔄 **Multi-tenant TECHNICIAN** — un technicien accède à plusieurs établissements avec un seul compte
+- ✅ **Multi-tenant TECHNICIAN** — CF ADD/REMOVE_TENANT_ACCESS + panneau "Associer" dans ManagementPanel + badge multi-site + bouton retrait
 - 🔄 **Responsive CDil mobile** — refonte de la grille de saisie pour usage terrain sur téléphone
