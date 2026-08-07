@@ -1401,26 +1401,36 @@ export const ManagementPanel: React.FC<ManagementPanelProps> = ({ user }) => {
                 <ClipboardList size={16} className="text-primary"/> Historique des Visites
               </h3>
               <div className="space-y-3">
-                {cdilSessions.filter(s => s.status === 'COMPLETED').map(session => (
+                {cdilSessions.filter(s => s.status === 'COMPLETED').map(session => {
+                  const nbOk     = session.entries.filter(e => String(e.buse) === 'ok' && String(e.crepine) === 'ok' && String(e.ligne) === 'ok').length;
+                  const nbSimple = session.entries.filter(e => [String(e.buse), String(e.crepine), String(e.ligne)].includes('1') && ![String(e.buse), String(e.crepine), String(e.ligne)].includes('2')).length;
+                  const nbDouble = session.entries.filter(e => [String(e.buse), String(e.crepine), String(e.ligne)].includes('2')).length;
+                  return (
                   <div key={session.id} className="bg-white border rounded-[24px] p-5 shadow-sm flex items-center justify-between gap-4">
-                    <div className="min-w-0flex-1">
+                    <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2 mb-1">
                         <div className="font-black text-dark text-sm truncate">{session.title}</div>
                         <span className={`shrink-0 text-[9px] font-black px-2 py-0.5 rounded-md uppercase tracking-widest ${session.sessionType === 'INTERVENTION' ? 'bg-orange-50 text-orange-600 border border-orange-200' : 'bg-primary/10 text-primary border border-primary/20'}`}>
                           {session.sessionType === 'INTERVENTION' ? 'Intervention' : 'Périodique'}
                         </span>
                       </div>
-                      <div className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">
+                      <div className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2">
                         {new Date(session.date).toLocaleDateString('fr-FR', { day:'2-digit', month:'long', year:'numeric' })}
                         {' · '}{session.technicianName}
                         {' · '}{session.entries.length} unité{session.entries.length > 1 ? 's' : ''}
+                      </div>
+                      <div className="flex gap-1.5 flex-wrap">
+                        {nbOk > 0     && <span className="text-[9px] font-black px-2 py-0.5 rounded-md border bg-success/10 text-success border-success/20">{nbOk} OK</span>}
+                        {nbSimple > 0 && <span className="text-[9px] font-black px-2 py-0.5 rounded-md border bg-orange-50 text-orange-600 border-orange-200">{nbSimple} × 1 remplacement</span>}
+                        {nbDouble > 0 && <span className="text-[9px] font-black px-2 py-0.5 rounded-md border bg-red-50 text-red-600 border-red-200">{nbDouble} × 2 remplacements</span>}
                       </div>
                     </div>
                     <button onClick={() => exportCdilSessionCsv(session)} className="shrink-0 flex items-center gap-2 px-5 py-2.5 bg-gray-100 hover:bg-primary hover:text-white text-dark rounded-xl text-[10px] font-black uppercase tracking-widest transition-all">
                       <Download size={13}/> CSV
                     </button>
                   </div>
-                ))}
+                  );
+                })}
                 {cdilSessions.filter(s => s.status === 'DRAFT').length > 0 && (
                   <div className="text-[10px] font-bold text-gray-400 uppercase tracking-widest text-center py-2">
                     {cdilSessions.filter(s => s.status === 'DRAFT').length} visite(s) en cours — accessible depuis l'onglet VISITES
