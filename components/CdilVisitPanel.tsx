@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { User, CdilUnit, VisitSession, VisitEntry, ComponentState } from '../types';
 import { db } from '../services/db';
-import { Plus, ChevronLeft, Save, CheckCircle, Download, ClipboardList, Loader2, Trash2, Zap, CalendarDays, Camera, X } from 'lucide-react';
+import { Plus, ChevronLeft, Save, CheckCircle, Download, ClipboardList, Loader2, Trash2, Zap, CalendarDays, Camera, X, Printer } from 'lucide-react';
 import { useDialog } from '../hooks/useDialog';
 
 interface CdilVisitPanelProps {
@@ -70,6 +70,93 @@ function exportAllToCsv(sessions: VisitSession[]) {
     allRows.push(...sessionToRows(s));
   });
   triggerDownload(buildCsv(allRows), `CDil_Export_Complet.csv`);
+}
+
+function printSession(session: VisitSession) {
+  const typeLabel = session.sessionType === 'INTERVENTION' ? 'Intervention inopinée' : 'Visite périodique';
+  const stateLabel = (v: string) => v === 'ok' ? 'OK' : v === '1' ? '1 remplacement' : '2 remplacements';
+  const stateColor = (v: string) => v === 'ok' ? '#16a34a' : v === '1' ? '#ea580c' : '#dc2626';
+
+  const rows = session.entries.map(e => `
+    <tr>
+      <td>${e.serialNumber}</td>
+      <td>${e.location}</td>
+      <td>${e.service}</td>
+      <td style="color:${stateColor(String(e.buse))};font-weight:700">${stateLabel(String(e.buse))}</td>
+      <td style="color:${stateColor(String(e.crepine))};font-weight:700">${stateLabel(String(e.crepine))}</td>
+      <td style="color:${stateColor(String(e.ligne))};font-weight:700">${stateLabel(String(e.ligne))}</td>
+      <td class="remarks">${e.remarks || ''}</td>
+    </tr>`).join('');
+
+  const nbOk     = session.entries.filter(e => String(e.buse) === 'ok' && String(e.crepine) === 'ok' && String(e.ligne) === 'ok').length;
+  const nbSimple = session.entries.filter(e => [String(e.buse), String(e.crepine), String(e.ligne)].includes('1') && ![String(e.buse), String(e.crepine), String(e.ligne)].includes('2')).length;
+  const nbDouble = session.entries.filter(e => [String(e.buse), String(e.crepine), String(e.ligne)].includes('2')).length;
+
+  const html = `<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8"/>
+  <title>Rapport CDil — ${session.title}</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Helvetica Neue', Arial, sans-serif; font-size: 11px; color: #111; padding: 32px; }
+    header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 28px; border-bottom: 2px solid #111; padding-bottom: 16px; }
+    header h1 { font-size: 20px; font-weight: 900; letter-spacing: -0.5px; }
+    header .meta { text-align: right; font-size: 10px; color: #555; line-height: 1.8; }
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.08em; }
+    .badge-blue { background: #eff6ff; color: #1d4ed8; }
+    .badge-orange { background: #fff7ed; color: #c2410c; }
+    .summary { display: flex; gap: 12px; margin-bottom: 20px; }
+    .summary span { padding: 4px 10px; border-radius: 6px; font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.08em; }
+    .ok   { background: #f0fdf4; color: #15803d; border: 1px solid #bbf7d0; }
+    .one  { background: #fff7ed; color: #c2410c; border: 1px solid #fed7aa; }
+    .two  { background: #fef2f2; color: #b91c1c; border: 1px solid #fecaca; }
+    table { width: 100%; border-collapse: collapse; }
+    th { background: #f9fafb; font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.1em; padding: 8px 10px; text-align: left; border-bottom: 2px solid #e5e7eb; }
+    td { padding: 8px 10px; border-bottom: 1px solid #f3f4f6; font-size: 10px; vertical-align: top; }
+    td.remarks { color: #6b7280; font-style: italic; }
+    tr:nth-child(even) td { background: #fafafa; }
+    footer { margin-top: 24px; font-size: 9px; color: #9ca3af; text-align: right; }
+    @media print {
+      body { padding: 20px; }
+      @page { margin: 1.5cm; size: A4 landscape; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:0.15em;color:#6366f1;margin-bottom:6px">MIKI — Rapport de visite CDil</div>
+      <h1>${session.title}</h1>
+    </div>
+    <div class="meta">
+      <span class="badge ${session.sessionType === 'INTERVENTION' ? 'badge-orange' : 'badge-blue'}">${typeLabel}</span><br/>
+      Date : <strong>${formatDateFr(session.date)}</strong><br/>
+      Technicien : <strong>${session.technicianName}</strong><br/>
+      Centrales visitées : <strong>${session.entries.length}</strong>
+    </div>
+  </header>
+  <div class="summary">
+    ${nbOk > 0     ? `<span class="ok">${nbOk} OK</span>` : ''}
+    ${nbSimple > 0 ? `<span class="one">${nbSimple} × 1 remplacement</span>` : ''}
+    ${nbDouble > 0 ? `<span class="two">${nbDouble} × 2 remplacements</span>` : ''}
+  </div>
+  <table>
+    <thead><tr>
+      <th>N° Série</th><th>Localisation</th><th>Service</th>
+      <th>Buse</th><th>Crépine</th><th>Ligne aspiration</th><th>Remarques</th>
+    </tr></thead>
+    <tbody>${rows}</tbody>
+  </table>
+  <footer>Imprimé le ${new Date().toLocaleDateString('fr-FR', { day:'2-digit', month:'long', year:'numeric' })} · MIKI</footer>
+  <script>window.onload = () => { window.print(); }</script>
+</body>
+</html>`;
+
+  const win = window.open('', '_blank');
+  if (!win) return;
+  win.document.write(html);
+  win.document.close();
 }
 
 export const CdilVisitPanel: React.FC<CdilVisitPanelProps> = ({ user }) => {
@@ -639,9 +726,14 @@ export const CdilVisitPanel: React.FC<CdilVisitPanelProps> = ({ user }) => {
                     </button>
                   </>
                 ) : (
-                  <button onClick={() => exportToCsv(session)} className="flex-1 flex items-center justify-center gap-2 py-3 bg-gray-100 text-dark hover:bg-primary hover:text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all">
-                    <Download size={14}/> Exporter CSV
-                  </button>
+                  <div className="flex gap-2 flex-1">
+                    <button onClick={() => exportToCsv(session)} className="flex-1 flex items-center justify-center gap-2 py-3 bg-gray-100 text-dark hover:bg-primary hover:text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all">
+                      <Download size={14}/> CSV
+                    </button>
+                    <button onClick={() => printSession(session)} className="flex-1 flex items-center justify-center gap-2 py-3 bg-gray-100 text-dark hover:bg-dark hover:text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all">
+                      <Printer size={14}/> Imprimer
+                    </button>
+                  </div>
                 )}
               </div>
             </div>
