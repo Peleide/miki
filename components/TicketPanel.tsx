@@ -47,7 +47,7 @@ export const TicketPanel: React.FC<TicketPanelProps> = ({ user }) => {
   const [checklistAnswers, setChecklistAnswers] = useState<any>({});
   const [actionLoading, setActionLoading] = useState(false);
 
-  const isManager = user.role === UserRole.MANAGER || user.role === UserRole.ADMIN;
+  const isManager = user.role === UserRole.TECHNICIAN || user.role === UserRole.ADMIN;
 
   const loadData = async () => {
     setLoading(true);

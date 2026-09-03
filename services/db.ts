@@ -1,4 +1,4 @@
-import { User, UserRole, Equipment, EquipmentLog, Tenant, EquipmentLogAction, AuditLog, IncidentReport, AppNotification, Site, EquipmentType, DEFAULT_EQUIPMENT_TYPES, CdilUnit, VisitSession, VisitEntry, ComponentState } from '../types';
+import { User, UserRole, Equipment, EquipmentLog, Tenant, EquipmentLogAction, AuditLog, IncidentReport, AppNotification, Site, EquipmentType, DEFAULT_EQUIPMENT_TYPES, CdilUnit, VisitSession, VisitEntry, ComponentState, Signalement, SignalementStatus } from '../types';
 import { dbFirestore, auth, functions, storage } from './firebaseConfig';
 import {
   collection, doc, getDoc, getDocs, query, where, orderBy, limit, Timestamp, onSnapshot, updateDoc
@@ -100,12 +100,24 @@ class DatabaseService {
       return await this.call('manageEquipment', { action: 'RENEW_QR', tenantId: manager.tenantId, payload: { id: equipmentId } });
   }
 
-  async deleteEquipment(equipmentId: string, manager: User) {
+  async requestArchiveEquipment(equipmentId: string, manager: User) {
+      return await this.call('manageEquipment', { action: 'REQUEST_ARCHIVE', tenantId: manager.tenantId, payload: { id: equipmentId } });
+  }
+
+  async cancelArchiveRequest(equipmentId: string, manager: User) {
+      return await this.call('manageEquipment', { action: 'CANCEL_ARCHIVE_REQUEST', tenantId: manager.tenantId, payload: { id: equipmentId } });
+  }
+
+  async archiveEquipment(equipmentId: string, manager: User) {
       return await this.call('manageEquipment', { action: 'ARCHIVE', tenantId: manager.tenantId, payload: { id: equipmentId } });
   }
 
-  async forceReturnEquipment(equipmentId: string, manager: User) {
-      return await this.call('manageEquipment', { action: 'FORCE_RETURN', tenantId: manager.tenantId, payload: { id: equipmentId } });
+  async reactivateEquipment(equipmentId: string, manager: User) {
+      return await this.call('manageEquipment', { action: 'REACTIVATE', tenantId: manager.tenantId, payload: { id: equipmentId } });
+  }
+
+  async forceReturnEquipment(equipmentId: string, manager: User, reason?: string) {
+      return await this.call('manageEquipment', { action: 'FORCE_RETURN', tenantId: manager.tenantId, payload: { id: equipmentId, reason } });
   }
 
   async addTenantAccess(tenantId: string, email: string, role: UserRole, actor: User): Promise<{ targetId: string; targetName: string }> {
@@ -332,7 +344,7 @@ class DatabaseService {
     
     let newRole = user.tenantsAccess[targetTenantId];
     if (!newRole) {
-        newRole = (isGlobalAdmin && targetTenantId !== 'platform') ? UserRole.MANAGER : user.role;
+        newRole = (isGlobalAdmin && targetTenantId !== 'platform') ? UserRole.TECHNICIAN : user.role;
     }
     
     return { ...user, tenantId: targetTenantId, role: newRole };
@@ -465,7 +477,7 @@ class DatabaseService {
             else if (data.tenantsAccess?.['platform']) computedRole = data.tenantsAccess['platform'];
             else {
                  const roles = Object.values(data.tenantsAccess || {});
-                 if (roles.includes('MANAGER')) computedRole = UserRole.MANAGER;
+                 if (roles.includes('TECHNICIAN')) computedRole = UserRole.TECHNICIAN;
             }
         }
 
@@ -561,8 +573,61 @@ class DatabaseService {
   async seedDatabase() { return await this.call('seedSystem', {}); }
   async repairAdminProfile() { return await this.call('repairAdminProfile', {}); }
   
-  async dangerousResetPlatform(adminId: string) { 
-      return await this.call('nukePlatform', {}); 
+  async dangerousResetPlatform(adminId: string) {
+      return await this.call('nukePlatform', {});
+  }
+
+  // --- SIGNALEMENTS ---
+
+  async getEquipmentHistory(tenantId: string, equipmentId: string) {
+    const [logsSnap, ticketsSnap, sigsSnap] = await Promise.all([
+      getDocs(query(
+        collection(dbFirestore, 'tenants', tenantId, 'equipmentLogs'),
+        where('equipmentId', '==', equipmentId),
+        orderBy('timestamp', 'desc'),
+        limit(200)
+      )),
+      getDocs(query(
+        collection(dbFirestore, 'tenants', tenantId, 'incidentReports'),
+        where('equipmentId', '==', equipmentId)
+      )),
+      getDocs(query(
+        collection(dbFirestore, 'tenants', tenantId, 'signalements'),
+        where('equipmentId', '==', equipmentId)
+      )),
+    ]);
+    return {
+      logs: logsSnap.docs.map(d => ({ id: d.id, ...d.data() } as EquipmentLog)),
+      tickets: ticketsSnap.docs.map(d => ({ id: d.id, ...d.data() } as IncidentReport)),
+      signalements: sigsSnap.docs.map(d => ({ id: d.id, ...d.data() } as Signalement)),
+    };
+  }
+
+  async getSignalements(tenantId: string): Promise<Signalement[]> {
+    const snap = await getDocs(
+      query(collection(dbFirestore, 'tenants', tenantId, 'signalements'), orderBy('createdAt', 'desc'))
+    );
+    return snap.docs.map(d => ({ id: d.id, ...d.data() } as Signalement));
+  }
+
+  async createSignalement(tenantId: string, payload: { title: string; description: string; equipmentId?: string; equipmentName?: string; siteId?: string; siteName?: string }, user: User) {
+    return await this.call('manageSignalement', { action: 'CREATE', tenantId, payload });
+  }
+
+  async addReplyToSignalement(tenantId: string, id: string, message: string) {
+    return await this.call('manageSignalement', { action: 'ADD_REPLY', tenantId, payload: { id, message } });
+  }
+
+  async updateSignalementStatus(tenantId: string, id: string, status: SignalementStatus) {
+    return await this.call('manageSignalement', { action: 'UPDATE_STATUS', tenantId, payload: { id, status } });
+  }
+
+  async closeSignalement(tenantId: string, id: string) {
+    return await this.call('manageSignalement', { action: 'CLOSE', tenantId, payload: { id } });
+  }
+
+  async archiveSignalement(tenantId: string, id: string) {
+    return await this.call('manageSignalement', { action: 'ARCHIVE', tenantId, payload: { id } });
   }
 }
 

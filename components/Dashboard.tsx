@@ -35,7 +35,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ user }) => {
   const [cdilUnits, setCdilUnits] = useState<CdilUnit[]>([]);
   
   const [isLoading, setIsLoading] = useState(false);
-  const isManager = user.role === UserRole.MANAGER || user.role === UserRole.ADMIN;
+  const isManager = user.role === UserRole.TECHNICIAN || user.role === UserRole.ADMIN;
   const isClient = user.role === UserRole.CLIENT;
   const timezone = currentTenant?.timezone || 'Europe/Paris';
 
@@ -102,19 +102,38 @@ export const Dashboard: React.FC<DashboardProps> = ({ user }) => {
       }
   };
 
-  // MTTR & Utilization Calculation
-  const metrics = useMemo(() => {
-    const totalEq = equipments.length;
-    const availableEq = equipments.filter(e => e.status === 'AVAILABLE').length;
-    const inUseEq = equipments.filter(e => e.status === 'IN_USE').length;
-    const maintenanceEq = equipments.filter(e => e.status === 'MAINTENANCE').length;
+  // CLIENT scope filtering — if CLIENT has assignedSiteIds, restrict to their sites
+  const clientSiteSet = useMemo(() => {
+    if (user.role !== UserRole.CLIENT || !user.assignedSiteIds?.length) return null;
+    return new Set(user.assignedSiteIds);
+  }, [user.role, user.assignedSiteIds]);
 
-    // Calcul MTTR approximé basé sur les logs
-    // On cherche les séquences REPORT -> TAKE_FOR_MAINTENANCE -> RETURN
-    // Pour une version V1, on peut simplement afficher des KPIs basiques.
-    const takes = logs.filter(l => l.action === 'TAKE');
-    const returns = logs.filter(l => l.action === 'RETURN');
-    const interventions = logs.filter(l => l.action === 'INTERVENTION');
+  const visibleEquipments = useMemo(() =>
+    clientSiteSet ? equipments.filter(e => e.currentSiteId && clientSiteSet.has(e.currentSiteId)) : equipments,
+  [equipments, clientSiteSet]);
+
+  const visibleLogs = useMemo(() => {
+    if (!clientSiteSet) return logs;
+    const eqIds = new Set(visibleEquipments.map(e => e.id));
+    return logs.filter(l => eqIds.has(l.equipmentId));
+  }, [logs, visibleEquipments, clientSiteSet]);
+
+  const visibleReports = useMemo(() => {
+    if (!clientSiteSet) return incidentReports;
+    const eqIds = new Set(visibleEquipments.map(e => e.id));
+    return incidentReports.filter(r => eqIds.has(r.equipmentId));
+  }, [incidentReports, visibleEquipments, clientSiteSet]);
+
+  // Metrics computed on CLIENT-scoped data
+  const metrics = useMemo(() => {
+    const totalEq = visibleEquipments.length;
+    const availableEq = visibleEquipments.filter(e => e.status === 'AVAILABLE').length;
+    const inUseEq = visibleEquipments.filter(e => e.status === 'IN_USE').length;
+    const maintenanceEq = visibleEquipments.filter(e => e.status === 'MAINTENANCE').length;
+
+    const takes = visibleLogs.filter(l => l.action === 'TAKE');
+    const returns = visibleLogs.filter(l => l.action === 'RETURN');
+    const interventions = visibleLogs.filter(l => l.action === 'INTERVENTION');
 
     return {
         totalEq, availableEq, inUseEq, maintenanceEq,
@@ -123,7 +142,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ user }) => {
         interventionCount: interventions.length,
         utilizationRate: totalEq > 0 ? Math.round((inUseEq / totalEq) * 100) : 0
     };
-  }, [equipments, logs]);
+  }, [visibleEquipments, visibleLogs]);
 
   const formatTime = (ts: any) => ts ? TimeUtils.formatInTimezone(ts, timezone, { hour: '2-digit', minute: '2-digit' }) : '--:--';
   const formatDateBrief = (ts: any) => ts ? TimeUtils.formatInTimezone(ts, timezone, { day: '2-digit', month: '2-digit' }) : '--/--';
@@ -165,7 +184,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ user }) => {
                     <Database size={16}/> Mouvements
                 </button>
                 <button onClick={() => {setActiveTab('incidentReports'); setSelectedEquipment(null);}} className={`flex items-center gap-2 px-5 py-3 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] transition-all whitespace-nowrap ${activeTab === 'incidentReports' ? 'bg-white shadow-sm text-primary' : 'text-gray-400 hover:bg-gray-100'}`}>
-                    <AlertTriangle size={16}/> Tickets {incidentReports.filter(r=>r.status==='OPEN').length > 0 && <span className="bg-danger text-white px-1.5 py-0.5 rounded-md text-[8px]">{incidentReports.filter(r=>r.status==='OPEN').length}</span>}
+                    <AlertTriangle size={16}/> Tickets {visibleReports.filter(r=>r.status==='OPEN').length > 0 && <span className="bg-danger text-white px-1.5 py-0.5 rounded-md text-[8px]">{visibleReports.filter(r=>r.status==='OPEN').length}</span>}
                 </button>
              </div>
           </div>
@@ -202,6 +221,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ user }) => {
       
       <div className="flex-1 overflow-auto p-4 sm:p-10 no-scrollbar">
         <div className="max-w-7xl mx-auto">
+            {isClient && clientSiteSet && (
+              <div className="mb-6 flex items-center gap-3 bg-primary/5 border border-primary/20 rounded-2xl px-5 py-3">
+                <Info size={14} className="text-primary shrink-0"/>
+                <p className="text-xs font-bold text-primary">Vue restreinte à vos sites assignés ({clientSiteSet.size} site{clientSiteSet.size > 1 ? 's' : ''})</p>
+              </div>
+            )}
             {isLoading && (logs.length === 0 && equipments.length === 0) ? (
                <div className="py-20 text-center text-gray-300 animate-pulse font-black uppercase tracking-widest text-[10px]">Chargement...</div>
             ) : (
@@ -251,7 +276,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ user }) => {
                           <div className="bg-white p-8 rounded-[40px] border border-border shadow-sm">
                               <h3 className="font-black text-dark uppercase tracking-widest text-xs mb-6 flex items-center gap-2"><Settings2 size={16} className="text-primary"/> État du parc (Temps réel)</h3>
                               <div className="space-y-4">
-                                  {equipments.slice(0, 5).map(eq => (
+                                  {visibleEquipments.slice(0, 5).map(eq => (
                                       <div key={eq.id} className="flex justify-between items-center p-4 border rounded-2xl">
                                           <div>
                                               <div className="font-black text-sm">{eq.name}</div>
@@ -326,7 +351,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ user }) => {
                               </tr>
                           </thead>
                           <tbody className="divide-y divide-gray-50">
-                              {logs.map(log => (
+                              {visibleLogs.map(log => (
                                   <tr key={log.id} className="hover:bg-gray-50/50 transition-colors group">
                                       <td className="px-10 py-5">
                                           <div className={`inline-block px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest ${getActionColor(log.action)}`}>
@@ -347,7 +372,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ user }) => {
                                       </td>
                                   </tr>
                               ))}
-                              {logs.length === 0 && (
+                              {visibleLogs.length === 0 && (
                                   <tr><td colSpan={4} className="text-center py-20 text-gray-400 uppercase font-black text-xs tracking-widest">Aucun historique pour cette période</td></tr>
                               )}
                           </tbody>
@@ -357,7 +382,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ user }) => {
 
               {activeTab === 'incidentReports' && (
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 animate-in fade-in">
-                      {incidentReports.length === 0 ? (
+                      {visibleReports.length === 0 ? (
                           <div className="col-span-full py-20 text-center text-gray-300 font-black uppercase tracking-widest text-[10px]">
                             <div className="flex flex-col items-center gap-4">
                                 <div className="bg-gray-100 p-8 rounded-[40px] text-gray-200"><Inbox size={64}/></div>
@@ -365,7 +390,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ user }) => {
                             </div>
                           </div>
                       ) : (
-                          incidentReports.map(rep => (
+                          visibleReports.map(rep => (
                               <div key={rep.id} className="bg-white p-8 rounded-[32px] border border-border shadow-sm flex flex-col gap-4 group hover:shadow-xl transition-all duration-300 relative overflow-hidden">
                                   {reportStatusFilter === 'ARCHIVED' && <div className="absolute top-0 right-0 p-2 bg-gray-50 text-[8px] font-black uppercase tracking-widest text-gray-300 rounded-bl-xl border-l border-b border-gray-100">Clôturé</div>}
                                   <div className="flex justify-between items-start">
@@ -402,7 +427,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ user }) => {
                           {/* Filtres par type et par état */}
                           <div className="flex flex-col gap-3 mb-6">
                               <div className="flex flex-wrap gap-2">
-                                  {['ALL', ...Array.from(new Set(equipments.map(e => e.category || e.type).filter(Boolean)))].map(cat => (
+                                  {['ALL', ...Array.from(new Set(visibleEquipments.map(e => e.category || e.type).filter(Boolean)))].map(cat => (
                                       <button
                                           key={cat}
                                           onClick={() => setCategoryFilter(cat)}
@@ -436,7 +461,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ user }) => {
                               </div>
                           </div>
                           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                              {equipments
+                              {visibleEquipments
                                   .filter(eq => (categoryFilter === 'ALL' || (eq.category || eq.type) === categoryFilter) && (statusFilter === 'ALL' || eq.status === statusFilter))
                                   .map(eq => (
                                   <div
@@ -463,7 +488,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ user }) => {
                                       </div>
                                   </div>
                               ))}
-                              {equipments.filter(eq => (categoryFilter === 'ALL' || (eq.category || eq.type) === categoryFilter) && (statusFilter === 'ALL' || eq.status === statusFilter)).length === 0 && (
+                              {visibleEquipments.filter(eq => (categoryFilter === 'ALL' || (eq.category || eq.type) === categoryFilter) && (statusFilter === 'ALL' || eq.status === statusFilter)).length === 0 && (
                                   <div className="col-span-full py-20 text-center text-gray-400 text-xs font-black uppercase tracking-widest">
                                       Aucun objet répertorié.
                                   </div>
@@ -532,8 +557,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ user }) => {
                               </div>
 
                               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                                  {/* Maintenance Checklists */}
-                                  <div className="bg-white rounded-[32px] p-6 shadow-sm border border-border">
+                                  {/* Maintenance Checklists — masqué pour CLIENT */}
+                                  {isManager && <div className="bg-white rounded-[32px] p-6 shadow-sm border border-border">
                                       <h3 className="font-black text-sm uppercase tracking-widest mb-6 text-dark flex items-center gap-2"><ClipboardList size={18} className="text-primary"/> Checklists & Maintenances</h3>
                                       <div className="space-y-4 max-h-[500px] overflow-y-auto pr-2 no-scrollbar">
                                           {maintenanceLogs.filter(m => m.equipmentId === selectedEquipment.id).map(m => (
@@ -570,13 +595,13 @@ export const Dashboard: React.FC<DashboardProps> = ({ user }) => {
                                               </div>
                                           )}
                                       </div>
-                                  </div>
+                                  </div>}
 
                                   {/* Routine Logs */}
                                   <div className="bg-white rounded-[32px] p-6 shadow-sm border border-border">
                                       <h3 className="font-black text-sm uppercase tracking-widest mb-6 text-dark flex items-center gap-2"><Database size={18} className="text-primary"/> Historique des mouvements</h3>
                                       <div className="space-y-3 max-h-[500px] overflow-y-auto pr-2 no-scrollbar">
-                                          {logs.filter(l => l.equipmentId === selectedEquipment.id).map(log => (
+                                          {visibleLogs.filter(l => l.equipmentId === selectedEquipment.id).map(log => (
                                               <div key={log.id} className="flex justify-between items-center p-4 border rounded-2xl hover:bg-gray-50/50 transition-colors">
                                                   <div className="flex items-center gap-4">
                                                       <div className={`px-2 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest ${
@@ -596,7 +621,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ user }) => {
                                                   </div>
                                               </div>
                                           ))}
-                                          {logs.filter(l => l.equipmentId === selectedEquipment.id).length === 0 && (
+                                          {visibleLogs.filter(l => l.equipmentId === selectedEquipment.id).length === 0 && (
                                               <div className="py-12 text-center text-gray-400 font-black uppercase tracking-widest text-[10px]">
                                                   Aucun mouvement enregistré.
                                               </div>

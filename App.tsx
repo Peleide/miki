@@ -6,7 +6,8 @@ import { AgentView } from './components/AgentView';
 import { ManagementPanel } from './components/ManagementPanel';
 import { TicketPanel } from './components/TicketPanel';
 import { CdilVisitPanel } from './components/CdilVisitPanel';
-import { AdminPanel } from './components/AdminPanel'; 
+import { SignalementPanel } from './components/SignalementPanel';
+import { AdminPanel } from './components/AdminPanel';
 import { Login } from './components/Login'; 
 import { ForcePasswordChange } from './components/ForcePasswordChange'; 
 import { User, UserRole } from './types';
@@ -55,7 +56,7 @@ function App() {
        let targetRole = newUserProfile.tenantsAccess[targetTenantId];
        if (!targetRole) {
            const isGlobalAdmin = newUserProfile.role === UserRole.ADMIN || newUserProfile.tenantsAccess['platform'] === UserRole.ADMIN;
-           targetRole = (isGlobalAdmin && targetTenantId !== 'platform') ? UserRole.MANAGER : newUserProfile.role;
+           targetRole = (isGlobalAdmin && targetTenantId !== 'platform') ? UserRole.TECHNICIAN : newUserProfile.role;
        }
 
        return {
@@ -95,19 +96,20 @@ function App() {
         
         if (user.role === UserRole.ADMIN) {
             setCurrentView('admin');
-        } else if (savedView === 'management' && user.role === UserRole.MANAGER) {
+        } else if (savedView === 'management' && user.role === UserRole.TECHNICIAN) {
              setCurrentView('management');
         } else if (savedView === 'agent') {
              setCurrentView('agent');
-        } else if (savedView === 'dashboard' && (user.role === UserRole.MANAGER || user.role === UserRole.CLIENT)) {
+        } else if (savedView === 'dashboard' && (user.role === UserRole.TECHNICIAN || user.role === UserRole.CLIENT)) {
              setCurrentView('dashboard');
         } else if (savedView === 'tickets' && user.role === UserRole.TECHNICIAN) {
              setCurrentView('tickets');
-        } else if (savedView === 'cdil' && (user.role === UserRole.TECHNICIAN || user.role === UserRole.MANAGER)) {
+        } else if (savedView === 'cdil' && user.role === UserRole.TECHNICIAN) {
              setCurrentView('cdil');
+        } else if (savedView === 'signalements') {
+             setCurrentView('signalements');
         } else {
-             // Fallback par défaut
-             if (user.role === UserRole.TECHNICIAN) setCurrentView('tickets');
+             if (user.role === UserRole.TECHNICIAN) setCurrentView('management');
              else if (user.role === UserRole.AGENT) setCurrentView('agent');
              else setCurrentView('dashboard');
         }
@@ -145,7 +147,7 @@ function App() {
         
         if (updatedUser.role === UserRole.ADMIN) handleNavigate('admin');
         else if (updatedUser.role === UserRole.AGENT) handleNavigate('agent');
-        else if (updatedUser.role === UserRole.TECHNICIAN) handleNavigate('tickets');
+        else if (updatedUser.role === UserRole.TECHNICIAN) handleNavigate('management');
         else handleNavigate('dashboard');
     } catch (e) {
         alert("Impossible de changer d'organisation.");
@@ -209,11 +211,11 @@ function App() {
         <AdminPanel user={user} />
       )}
 
-      {currentView === 'dashboard' && (user.role === UserRole.MANAGER || user.role === UserRole.CLIENT) && (
+      {currentView === 'dashboard' && (user.role === UserRole.TECHNICIAN || user.role === UserRole.CLIENT) && (
         <Dashboard user={user} />
       )}
 
-      {currentView === 'management' && user.role === UserRole.MANAGER && (
+      {currentView === 'management' && user.role === UserRole.TECHNICIAN && (
         <ManagementPanel user={user} />
       )}
 
@@ -225,14 +227,18 @@ function App() {
         />
       )}
 
-      {currentView === 'tickets' && (user.role === UserRole.TECHNICIAN || user.role === UserRole.MANAGER) && (
+      {currentView === 'tickets' && user.role === UserRole.TECHNICIAN && (
         <TicketPanel user={user} />
       )}
 
-      {currentView === 'cdil' && (user.role === UserRole.TECHNICIAN || user.role === UserRole.MANAGER) && (
+      {currentView === 'cdil' && user.role === UserRole.TECHNICIAN && (
         <CdilVisitPanel user={user} />
       )}
-      
+
+      {currentView === 'signalements' && (user.role === UserRole.TECHNICIAN || user.role === UserRole.AGENT || user.role === UserRole.CLIENT) && (
+        <SignalementPanel user={user} />
+      )}
+
       {currentView === 'dashboard' && user.role === UserRole.AGENT && (
          <div className="p-10 text-center text-gray-400 font-medium">Tableau de bord non accessible aux agents.</div>
       )}

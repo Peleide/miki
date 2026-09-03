@@ -25,16 +25,16 @@ service cloud.firestore {
              isPlatformAdmin();
     }
 
-    // Vérifie si l'utilisateur connecté est Manager ou Admin (peut lire les profils de son équipe)
-    function isManagerOrAbove() {
+    // Vérifie si l'utilisateur connecté est Technicien ou Admin (peut lire les profils de son équipe)
+    function isTechnicianOrAbove() {
       let data = getUserData();
-      return isPlatformAdmin() || data.role in ['MANAGER', 'ADMIN'];
+      return isPlatformAdmin() || data.role in ['TECHNICIAN', 'ADMIN'];
     }
 
     // --- REGLES DE SECURITE ---
 
     match /users/{userId} {
-      allow read: if request.auth != null && (request.auth.uid == userId || isManagerOrAbove());
+      allow read: if request.auth != null && (request.auth.uid == userId || isTechnicianOrAbove());
       allow write: if false;
 
       match /notifications/{notifId} {

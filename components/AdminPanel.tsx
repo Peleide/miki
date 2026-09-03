@@ -59,7 +59,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
   const [managerFirstName, setManagerFirstName] = useState('');
   const [managerLastName, setManagerLastName] = useState('');
   const [managerEmail, setManagerEmail] = useState('');
-  const [managerRole, setManagerRole] = useState<UserRole>(UserRole.MANAGER);
+  const [managerRole, setManagerRole] = useState<UserRole>(UserRole.TECHNICIAN);
   const [selectedTenantId, setSelectedTenantId] = useState('');
   
   // Filtre Audit : 'platform' = tout voir, sinon ID du tenant spécifique
@@ -363,7 +363,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
                             {tenants.map(t => (<option key={t.id} value={t.id}>{t.name}</option>))}
                         </select>
                         <select value={managerRole} onChange={e => setManagerRole(e.target.value as UserRole)} className="w-40 border-2 border-border rounded-2xl p-4 text-sm bg-white font-black text-dark outline-none">
-                            <option value={UserRole.MANAGER}>MANAGER</option>
+                            <option value={UserRole.TECHNICIAN}>TECHNICIEN</option>
                             <option value={UserRole.CLIENT}>CLIENT</option>
                         </select>
                       </div>
@@ -627,7 +627,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
                         <select value={userAccessMap[t.id] || 'NONE'} onChange={(e) => setUserAccessMap(prev => ({ ...prev, [t.id]: e.target.value as any }))} className="border-2 border-border rounded-xl px-4 py-2 text-[10px] font-black uppercase bg-white">
                             <option value="NONE">Aucun accès</option>
                             <option value={UserRole.AGENT}>AGENT</option>
-                            <option value={UserRole.MANAGER}>MANAGER</option>
+                            <option value={UserRole.TECHNICIAN}>TECHNICIEN</option>
                             <option value={UserRole.CLIENT}>CLIENT</option>
                         </select>
                      </div>

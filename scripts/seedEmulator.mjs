@@ -233,30 +233,26 @@ async function seed() {
         quotas: { users: 20, equipments: 50 },
     }, { merge: true });
 
-    // 4. Manager
-    await createUser('manager@miki.nc', 'password123', 'Marie Manager', 'MANAGER', 'tenant-test');
+    // 4. Technicien (remplace Manager + Technicien — 4 rôles uniquement)
+    await createUser('tech@miki.nc', 'password123', 'Tom Technicien', 'TECHNICIAN', 'tenant-test');
 
     // 5. Agent
     await createUser('agent@miki.nc', 'password123', 'Alex Agent', 'AGENT', 'tenant-test');
 
-    // 6. Technicien
-    await createUser('tech@miki.nc', 'password123', 'Tom Technicien', 'TECHNICIAN', 'tenant-test');
-
-    // 7. Client
+    // 6. Client
     await createUser('client@miki.nc', 'password123', 'Claire Client', 'CLIENT', 'tenant-test');
 
-    // 8. Équipements de test
+    // 7. Équipements de test
     console.log('\n📦 Ajout des équipements...\n');
     await seedEquipments('tenant-test');
 
     console.log('\n✅ Émulateur prêt !\n');
-    console.log('  admin@miki.nc    / password123  →  Super Admin (plateforme)');
-    console.log('  manager@miki.nc  / password123  →  Manager (Clinique Test)');
-    console.log('  tech@miki.nc     / password123  →  Technicien (Clinique Test)');
-    console.log('  agent@miki.nc    / password123  →  Agent (Clinique Test)');
-    console.log('  client@miki.nc   / password123  →  Client (Clinique Test)');
+    console.log('  admin@miki.nc  / password123  →  Admin (plateforme)');
+    console.log('  tech@miki.nc   / password123  →  Technicien (Clinique Test) — gestion + visites + tickets');
+    console.log('  agent@miki.nc  / password123  →  Agent (Clinique Test)');
+    console.log('  client@miki.nc / password123  →  Client (Clinique Test)');
     console.log('\n  UI émulateur : http://localhost:4000');
-    console.log('  App          : http://localhost:3000\n');
+    console.log('  App          : http://localhost:3001\n');
 
     process.exit(0);
 }

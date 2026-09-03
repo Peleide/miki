@@ -16,6 +16,20 @@ interface PendingConfirm extends ConfirmConfig {
   loading?: boolean;
 }
 
+interface PromptConfig {
+  title: string;
+  message: string;
+  placeholder?: string;
+  confirmLabel?: string;
+  cancelLabel?: string;
+  variant?: 'danger' | 'warning' | 'default';
+  required?: boolean;
+}
+
+interface PendingPrompt extends PromptConfig {
+  resolve: (val: string | null) => void;
+}
+
 interface ToastItem {
   id: number;
   msg: string;
@@ -70,6 +84,55 @@ function ConfirmModal({ pending, onConfirm, onCancel, confirming }: {
   );
 }
 
+// ─── PromptModal ──────────────────────────────────────────────────────────────
+
+function PromptModal({ pending, onConfirm, onCancel }: {
+  pending: PendingPrompt;
+  onConfirm: (val: string) => void;
+  onCancel: () => void;
+}) {
+  const [value, setValue] = React.useState('');
+  const v = VARIANT_STYLES[pending.variant || 'default'];
+  const Icon = v.icon;
+  const canSubmit = !pending.required || value.trim().length > 0;
+
+  return (
+    <div className="fixed inset-0 z-[600] flex items-end sm:items-center justify-center p-4 sm:p-0">
+      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onCancel}/>
+      <div className="relative bg-white rounded-[32px] p-8 shadow-2xl w-full max-w-sm mx-auto animate-in fade-in slide-in-from-bottom-4 sm:slide-in-from-bottom-0 sm:zoom-in-95">
+        <div className={`w-14 h-14 ${v.iconBg} rounded-2xl flex items-center justify-center mb-6`}>
+          <Icon size={28} className={v.iconColor} />
+        </div>
+        <h3 className="font-black text-dark text-lg tracking-tight mb-2">{pending.title}</h3>
+        <p className="text-sm font-medium text-gray-500 leading-relaxed mb-4">{pending.message}</p>
+        <textarea
+          autoFocus
+          rows={3}
+          value={value}
+          onChange={e => setValue(e.target.value)}
+          placeholder={pending.placeholder || ''}
+          className="w-full p-4 bg-gray-50 border border-border rounded-2xl text-sm font-medium outline-none focus:border-primary resize-none mb-6"
+        />
+        <div className="flex gap-3">
+          <button
+            onClick={onCancel}
+            className="flex-1 py-4 bg-gray-100 text-dark rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-gray-200 transition-all"
+          >
+            {pending.cancelLabel || 'Annuler'}
+          </button>
+          <button
+            onClick={() => canSubmit && onConfirm(value.trim())}
+            disabled={!canSubmit}
+            className={`flex-[2] py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-xl transition-all disabled:opacity-40 ${v.btn}`}
+          >
+            {pending.confirmLabel || 'Confirmer'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Toast ────────────────────────────────────────────────────────────────────
 
 const TOAST_STYLES = {
@@ -97,11 +160,15 @@ function Toast({ item, onDismiss }: { item: ToastItem; onDismiss: () => void }) 
 
 export function useDialog() {
   const [pending, setPending] = useState<PendingConfirm | null>(null);
+  const [pendingPrompt, setPendingPrompt] = useState<PendingPrompt | null>(null);
   const [confirming, setConfirming] = useState(false);
   const [toasts, setToasts] = useState<ToastItem[]>([]);
 
   const confirm = useCallback((config: ConfirmConfig): Promise<boolean> =>
     new Promise(resolve => { setConfirming(false); setPending({ ...config, resolve }); }), []);
+
+  const prompt = useCallback((config: PromptConfig): Promise<string | null> =>
+    new Promise(resolve => { setPendingPrompt({ ...config, resolve }); }), []);
 
   const toast = useCallback((msg: string, type: ToastItem['type'] = 'error') => {
     const id = Date.now();
@@ -134,6 +201,13 @@ export function useDialog() {
           confirming={confirming}
         />
       )}
+      {pendingPrompt && (
+        <PromptModal
+          pending={pendingPrompt}
+          onConfirm={val => { pendingPrompt.resolve(val); setPendingPrompt(null); }}
+          onCancel={() => { pendingPrompt.resolve(null); setPendingPrompt(null); }}
+        />
+      )}
       {toasts.length > 0 && (
         <div className="fixed bottom-24 left-0 right-0 z-[700] flex flex-col items-center gap-2 px-4 pointer-events-none">
           {toasts.map(t => (
@@ -146,5 +220,5 @@ export function useDialog() {
     </>
   );
 
-  return { confirm, toast, dialogNode };
+  return { confirm, prompt, toast, dialogNode };
 }

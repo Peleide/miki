@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { User, Equipment, EquipmentLogAction, UserRole } from '../types';
 import { db } from '../services/db';
-import { CheckCircle, MapPin, LogIn, LogOut, AlertTriangle, X, Loader2, RefreshCw, Check, LayoutGrid, ChevronDown, Wrench, Package, Box, Search } from 'lucide-react';
+import { CheckCircle, MapPin, LogIn, LogOut, AlertTriangle, X, Loader2, RefreshCw, Check, LayoutGrid, ChevronDown, Wrench, Package, Box, Search, Clock } from 'lucide-react';
 import { Html5Qrcode } from 'html5-qrcode';
 import { useDialog } from '../hooks/useDialog';
 
@@ -31,6 +31,8 @@ export const AgentView: React.FC<AgentViewProps> = ({ user, isOnline, onModeChan
   const [reportTags, setReportTags] = useState<string[]>([]);
   
   const [takeQuantity, setTakeQuantity] = useState(1);
+  const [isAPosteriori, setIsAPosteriori] = useState(false);
+  const [aposterioriDate, setAposterioriDate] = useState('');
 
   const isSelectedEqRef = useRef<boolean>(false);
   const lastScanTimeRef = useRef<number>(0);
@@ -136,6 +138,8 @@ export const AgentView: React.FC<AgentViewProps> = ({ user, isOnline, onModeChan
     isSelectedEqRef.current = false;
     lastScannedQrCodeRef.current = null;
     setTakeQuantity(1);
+    setIsAPosteriori(false);
+    setAposterioriDate('');
   };
 
   const [checklists, setChecklists] = useState<any[]>([]);
@@ -156,8 +160,11 @@ export const AgentView: React.FC<AgentViewProps> = ({ user, isOnline, onModeChan
       setEquipments(eqs);
       setChecklists(chks);
       const activeSites = (sts as any).filter((s:any) => s.status === 'ACTIVE');
-      setSites(activeSites);
-      if (activeSites.length > 0) setSelectedSiteId(activeSites[0].id);
+      const visibleSites = (user.role === UserRole.TECHNICIAN && (user.assignedSiteIds?.length ?? 0) > 0)
+        ? activeSites.filter((s: any) => user.assignedSiteIds!.includes(s.id))
+        : activeSites;
+      setSites(visibleSites);
+      if (visibleSites.length > 0) setSelectedSiteId(visibleSites[0].id);
     } catch (e) { console.error("Load error", e); } finally { setLoading(false); }
   };
 
@@ -187,11 +194,12 @@ export const AgentView: React.FC<AgentViewProps> = ({ user, isOnline, onModeChan
     setLoading(true);
     try {
       const capturedQrCode = lastScannedQrCodeRef.current;
-      await db.processEquipmentScan(selectedEq.id, action, user, { 
-          validationQr: capturedQrCode || undefined, 
+      await db.processEquipmentScan(selectedEq.id, action, user, {
+          validationQr: capturedQrCode || undefined,
           quantity: selectedEq.isBatch ? takeQuantity : 1,
-          siteId: action === 'TAKE' ? selectedSiteId : undefined
-      }); 
+          siteId: action === 'TAKE' ? selectedSiteId : undefined,
+          ...(isAPosteriori && aposterioriDate ? { declaredAt: new Date(aposterioriDate).toISOString() } : {}),
+      });
 
       if (action === 'TAKE' && activeChecklist) {
           await db.submitChecklistAnswers(user.tenantId, {
@@ -616,6 +624,39 @@ export const AgentView: React.FC<AgentViewProps> = ({ user, isOnline, onModeChan
                         </div>
                     )}
                     
+                    {/* Saisie a posteriori */}
+                    <div className="mb-4">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const next = !isAPosteriori;
+                          setIsAPosteriori(next);
+                          if (next && !aposterioriDate) {
+                            const now = new Date();
+                            now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+                            setAposterioriDate(now.toISOString().slice(0, 16));
+                          }
+                        }}
+                        className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all w-full justify-center border ${isAPosteriori ? 'bg-amber-50 border-amber-300 text-amber-700' : 'bg-white border-border text-gray-400 hover:border-amber-300 hover:text-amber-600'}`}
+                      >
+                        <Clock size={13}/>
+                        Saisie a posteriori {isAPosteriori ? '(activée)' : ''}
+                      </button>
+                      {isAPosteriori && (
+                        <div className="mt-2">
+                          <label className="text-[9px] font-black uppercase tracking-widest text-amber-600 block mb-1.5 ml-1">Heure réelle de l'action</label>
+                          <input
+                            type="datetime-local"
+                            value={aposterioriDate}
+                            max={new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16)}
+                            onChange={e => setAposterioriDate(e.target.value)}
+                            className="w-full p-4 bg-amber-50 border border-amber-200 rounded-2xl text-sm font-bold outline-none focus:border-amber-400 text-amber-800"
+                          />
+                          <p className="text-[9px] text-amber-500 font-bold mt-1 ml-1">L'heure de saisie réelle sera également enregistrée.</p>
+                        </div>
+                      )}
+                    </div>
+
                     <div className="space-y-4">
                       {selectedEq.isBatch ? (
                         <div className="flex gap-3">

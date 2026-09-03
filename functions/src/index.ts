@@ -68,7 +68,7 @@ async function createManagerNotification(tenantId: string, title: string, messag
         const data = doc.data();
         const role = data.tenantsAccess?.[tenantId] || data.role;
         const isPlatformAdmin = data.tenantsAccess?.['platform'] === 'ADMIN';
-        if (role === 'MANAGER' || role === 'ADMIN' || role === 'TECHNICIAN' || isPlatformAdmin) {
+        if (role === 'ADMIN' || role === 'TECHNICIAN' || isPlatformAdmin) {
             const notifRef = db.collection("users").doc(doc.id).collection("notifications").doc();
             batch.set(notifRef, {
                 id: notifRef.id,
@@ -78,6 +78,25 @@ async function createManagerNotification(tenantId: string, title: string, messag
                 message,
                 type,
                 read: false,
+                timestamp: new Date().toISOString()
+            });
+            count++;
+        }
+    });
+    if (count > 0) await batch.commit();
+}
+
+async function createAdminNotification(tenantId: string, title: string, message: string, type: string) {
+    const platformSnap = await db.collection("users").where("accessibleTenantIds", "array-contains", "platform").get();
+    const batch = db.batch();
+    let count = 0;
+    platformSnap.docs.forEach(doc => {
+        const data = doc.data();
+        if (data.tenantsAccess?.["platform"] === "ADMIN") {
+            const notifRef = db.collection("users").doc(doc.id).collection("notifications").doc();
+            batch.set(notifRef, {
+                id: notifRef.id, tenantId, userId: doc.id,
+                title, message, type, read: false,
                 timestamp: new Date().toISOString()
             });
             count++;
@@ -137,7 +156,7 @@ export const processEquipmentScan = functions
     const { equipmentId, action, tenantId, details } = data;
     const userId = context.auth.uid;
 
-    await verifyAccess(userId, tenantId, ["AGENT", "TECHNICIAN", "MANAGER", "ADMIN"]);
+    await verifyAccess(userId, tenantId, ["AGENT", "TECHNICIAN", "ADMIN"]);
 
     const [equipmentSnap, tenantSnap] = await Promise.all([
       db.collection("tenants").doc(tenantId).collection("equipments").doc(equipmentId).get(),
@@ -162,20 +181,26 @@ export const processEquipmentScan = functions
 
       const now = Timestamp.now();
 
+      const serverNow = new Date().toISOString();
       const logRecord: any = {
         tenantId,
         equipmentId,
         userId,
-        timestamp: new Date().toISOString(),
+        timestamp: details?.declaredAt || serverNow,
         action,
         isOffline: false,
-        isManual: false,
+        isManual: !!details?.declaredAt,
         source: "SCAN",
         userNote: details?.userNote,
         agentNameSnapshot: `${userData.firstName} ${userData.lastName}`,
         equipmentNameSnapshot: eqData?.name || "Inconnu",
         serverTimestamp: now,
       };
+
+      if (details?.declaredAt) {
+        logRecord.isAPosteriori = true;
+        logRecord.declaredAt = details.declaredAt;
+      }
 
       if (details?.siteId) logRecord.siteId = details.siteId;
 
@@ -316,7 +341,7 @@ export const deleteEquipmentLog = functions
   .https.onCall(async (data, context) => {
     if (!context.auth) throw new functions.https.HttpsError("unauthenticated", "Action interdite.");
     const { tenantId, logId } = data;
-    await verifyAccess(context.auth.uid, tenantId, ["MANAGER", "ADMIN"]);
+    await verifyAccess(context.auth.uid, tenantId, ["TECHNICIAN", "ADMIN"]);
     await db.collection("tenants").doc(tenantId).collection("equipmentLogs").doc(logId).delete();
     return { success: true };
   });
@@ -338,7 +363,7 @@ export const manageUser = functions
       }
     }
 
-    const { isGlobalAdmin, user: actorData } = await verifyAccess(context.auth.uid, tenantId, ["MANAGER", "ADMIN"]);
+    const { isGlobalAdmin, user: actorData } = await verifyAccess(context.auth.uid, tenantId, ["TECHNICIAN", "ADMIN"]);
     const actorName = `${actorData.firstName} ${actorData.lastName}`;
 
     if (action === "CREATE") {
@@ -455,7 +480,7 @@ export const manageEquipment = functions
     if (!context.auth) throw new functions.https.HttpsError("unauthenticated", "Auth required.");
 
     const { action, tenantId, payload } = data;
-    const { user: actorData } = await verifyAccess(context.auth.uid, tenantId, ["MANAGER", "ADMIN"]);
+    const { user: actorData, isGlobalAdmin } = await verifyAccess(context.auth.uid, tenantId, ["TECHNICIAN", "ADMIN"]);
     const actorName = `${actorData.firstName} ${actorData.lastName}`;
 
     if (action === "CREATE") {
@@ -572,9 +597,42 @@ export const manageEquipment = functions
       return { success: true };
     }
 
+    if (action === "REQUEST_ARCHIVE") {
+      const eqRef = db.collection("tenants").doc(tenantId).collection("equipments").doc(payload.id);
+      const eqSnap = await eqRef.get();
+      if (!eqSnap.exists) throw new functions.https.HttpsError("not-found", "Équipement introuvable.");
+      await eqRef.update({
+        archiveRequested: true,
+        archiveRequestedAt: new Date().toISOString(),
+        archiveRequestedBy: context.auth.uid,
+        archiveRequestedByName: actorName,
+      });
+      writeAuditLog({ action: 'EQUIPMENT_ARCHIVE_REQUESTED', actorId: context.auth.uid, actorName, tenantId, targetId: payload.id, targetName: eqSnap.data()?.name }).catch(console.error);
+      createAdminNotification(tenantId, 'Demande d\'archivage', `${actorName} demande l'archivage de "${eqSnap.data()?.name}".`, 'WARNING').catch(console.error);
+      return { success: true };
+    }
+
+    if (action === "CANCEL_ARCHIVE_REQUEST") {
+      const eqRef = db.collection("tenants").doc(tenantId).collection("equipments").doc(payload.id);
+      await eqRef.update({
+        archiveRequested: false,
+        archiveRequestedAt: FieldValue.delete(),
+        archiveRequestedBy: FieldValue.delete(),
+        archiveRequestedByName: FieldValue.delete(),
+      });
+      return { success: true };
+    }
+
     if (action === "ARCHIVE") {
+      if (!isGlobalAdmin) throw new functions.https.HttpsError("permission-denied", "Seul un administrateur peut valider l'archivage.");
       const eqSnap = await db.collection("tenants").doc(tenantId).collection("equipments").doc(payload.id).get();
-      await eqSnap.ref.update({ isArchived: true, status: "ARCHIVED" });
+      await eqSnap.ref.update({
+        isArchived: true, status: "ARCHIVED",
+        archiveRequested: false,
+        archiveRequestedAt: FieldValue.delete(),
+        archiveRequestedBy: FieldValue.delete(),
+        archiveRequestedByName: FieldValue.delete(),
+      });
       writeAuditLog({ action: 'EQUIPMENT_ARCHIVED', actorId: context.auth.uid, actorName, tenantId, targetId: payload.id, targetName: eqSnap.data()?.name }).catch(console.error);
       return { success: true };
     }
@@ -602,7 +660,17 @@ export const manageEquipment = functions
       });
 
       await batch.commit();
-      writeAuditLog({ action: 'EQUIPMENT_UPDATED', actorId: context.auth!.uid, actorName, tenantId, targetId: payload.id, targetName: eqData.name, details: { reason: 'Restitution forcée par le responsable' } }).catch(console.error);
+      writeAuditLog({ action: 'RESTITUTION_FORCED', actorId: context.auth!.uid, actorName, tenantId, targetId: payload.id, targetName: eqData.name, details: { reason: payload.reason || 'Restitution forcée' } }).catch(console.error);
+      return { success: true };
+    }
+
+    if (action === "REACTIVATE") {
+      if (!isGlobalAdmin) throw new functions.https.HttpsError("permission-denied", "Réactivation réservée aux administrateurs.");
+      const eqRef = db.collection("tenants").doc(tenantId).collection("equipments").doc(payload.id);
+      const eqSnap = await eqRef.get();
+      if (!eqSnap.exists) throw new functions.https.HttpsError("not-found", "Équipement introuvable.");
+      await eqRef.update({ isArchived: false, status: "AVAILABLE" });
+      writeAuditLog({ action: 'EQUIPMENT_REACTIVATED', actorId: context.auth.uid, actorName, tenantId, targetId: payload.id, targetName: eqSnap.data()?.name }).catch(console.error);
       return { success: true };
     }
 
@@ -614,7 +682,7 @@ export const manageStructure = functions
   .https.onCall(async (data, context) => {
     if (!context.auth) throw new functions.https.HttpsError("unauthenticated", "Connexion requise.");
     const { action, tenantId, payload } = data;
-    const { user: actorData } = await verifyAccess(context.auth.uid, tenantId, ["MANAGER", "ADMIN"]);
+    const { user: actorData } = await verifyAccess(context.auth.uid, tenantId, ["TECHNICIAN", "ADMIN"]);
     const actorName = `${actorData.firstName} ${actorData.lastName}`;
 
     if (action === "CREATE_TENANT") {
@@ -636,7 +704,7 @@ export const manageSite = functions
   .https.onCall(async (data, context) => {
     const { action, tenantId, payload } = data;
     if (!context.auth) throw new functions.https.HttpsError("unauthenticated", "Auth required.");
-    await verifyAccess(context.auth.uid, tenantId, ["MANAGER", "ADMIN"]);
+    await verifyAccess(context.auth.uid, tenantId, ["TECHNICIAN", "ADMIN"]);
 
     const coll = db.collection("tenants").doc(tenantId).collection("sites");
 
@@ -662,7 +730,7 @@ export const submitReport = functions
     if (!context.auth) throw new functions.https.HttpsError("unauthenticated", "Auth required.");
 
     if (action === "ARCHIVE") {
-      const { user: actorData } = await verifyAccess(context.auth.uid, tenantId, ["MANAGER", "ADMIN"]);
+      const { user: actorData } = await verifyAccess(context.auth.uid, tenantId, ["TECHNICIAN", "ADMIN"]);
       const reportRef = db.collection("tenants").doc(tenantId).collection("incidentReports").doc(incidentReport.id);
       const reportSnap = await reportRef.get();
       await reportRef.update({ status: "ARCHIVED" });
@@ -671,7 +739,7 @@ export const submitReport = functions
     }
 
     if (action === "UPDATE_STATUS") {
-      const { user: actorData } = await verifyAccess(context.auth.uid, tenantId, ["TECHNICIAN", "MANAGER", "ADMIN"]);
+      const { user: actorData } = await verifyAccess(context.auth.uid, tenantId, ["TECHNICIAN", "ADMIN"]);
       const updateData: any = { status: incidentReport.status };
       if (incidentReport.assignedTo !== undefined) {
         updateData.assignedTo = incidentReport.assignedTo;
@@ -707,8 +775,8 @@ export const submitReport = functions
       return { success: true };
     }
 
-    await verifyAccess(context.auth.uid, tenantId, ["AGENT", "TECHNICIAN", "MANAGER", "ADMIN"]);
-    
+    await verifyAccess(context.auth.uid, tenantId, ["AGENT", "TECHNICIAN", "ADMIN"]);
+
     // Creation de Ticket
     const userDoc = await db.collection("users").doc(context.auth.uid).get();
     const userData = userDoc.data();
@@ -741,7 +809,7 @@ export const manageChecklist = functions
   .https.onCall(async (data, context) => {
     const { tenantId, action, payload } = data;
     if (!context.auth) throw new functions.https.HttpsError("unauthenticated", "Auth required.");
-    await verifyAccess(context.auth.uid, tenantId, ["MANAGER", "ADMIN"]);
+    await verifyAccess(context.auth.uid, tenantId, ["TECHNICIAN", "ADMIN"]);
 
     const coll = db.collection("tenants").doc(tenantId).collection("checklists");
 
@@ -765,7 +833,7 @@ export const submitChecklistAnswers = functions
   .https.onCall(async (data, context) => {
     const { tenantId, payload } = data;
     if (!context.auth) throw new functions.https.HttpsError("unauthenticated", "Auth required.");
-    await verifyAccess(context.auth.uid, tenantId, ["AGENT", "TECHNICIAN", "MANAGER", "ADMIN"]);
+    await verifyAccess(context.auth.uid, tenantId, ["AGENT", "TECHNICIAN", "ADMIN"]);
 
     // If there is an incident report to create (failed trigger item)
     if (payload.incidentReportData) {
@@ -810,7 +878,7 @@ export const manageEquipmentType = functions
   .https.onCall(async (data, context) => {
     const { action, tenantId, payload } = data;
     if (!context.auth) throw new functions.https.HttpsError("unauthenticated", "Auth required.");
-    await verifyAccess(context.auth.uid, tenantId, ["MANAGER", "ADMIN"]);
+    await verifyAccess(context.auth.uid, tenantId, ["TECHNICIAN", "ADMIN"]);
     const coll = db.collection("tenants").doc(tenantId).collection("equipmentTypes");
     if (action === "CREATE") {
       const ref = await coll.add({ ...payload, tenantId, isArchived: false, createdAt: new Date().toISOString() });
@@ -830,7 +898,7 @@ export const manageCdilUnit = functions
   .https.onCall(async (data, context) => {
     if (!context.auth) throw new functions.https.HttpsError("unauthenticated", "Auth required.");
     const { action, tenantId, payload } = data;
-    const { user: actorData } = await verifyAccess(context.auth.uid, tenantId, ["MANAGER", "ADMIN", "TECHNICIAN"]);
+    const { user: actorData } = await verifyAccess(context.auth.uid, tenantId, ["TECHNICIAN", "ADMIN"]);
     const actorName = `${actorData.firstName} ${actorData.lastName}`;
 
     const coll = db.collection("tenants").doc(tenantId).collection("cdilUnits");
@@ -872,7 +940,7 @@ export const manageVisitSession = functions
   .https.onCall(async (data, context) => {
     if (!context.auth) throw new functions.https.HttpsError("unauthenticated", "Auth required.");
     const { action, tenantId, payload } = data;
-    await verifyAccess(context.auth.uid, tenantId, ["MANAGER", "ADMIN", "TECHNICIAN"]);
+    await verifyAccess(context.auth.uid, tenantId, ["TECHNICIAN", "ADMIN"]);
 
     const userDoc = await db.collection("users").doc(context.auth.uid).get();
     const userData = userDoc.data();
@@ -961,6 +1029,92 @@ export const manageVisitSession = functions
       const snap = await sessionRef.get();
       if (snap.data()?.status !== "DRAFT") throw new functions.https.HttpsError("failed-precondition", "Seules les sessions en brouillon peuvent être supprimées.");
       await sessionRef.delete();
+      return { success: true };
+    }
+
+    return { success: false };
+  });
+
+export const manageSignalement = functions
+  .region("australia-southeast1")
+  .https.onCall(async (data, context) => {
+    if (!context.auth) throw new functions.https.HttpsError("unauthenticated", "Auth required.");
+
+    const { action, tenantId, payload } = data;
+    const { user: actorData, isGlobalAdmin } = await verifyAccess(context.auth.uid, tenantId, ["AGENT", "CLIENT", "TECHNICIAN", "ADMIN"]);
+    const actorName = `${actorData.firstName} ${actorData.lastName}`;
+    const actorRole = (actorData.tenantsAccess?.[tenantId] || actorData.role || "AGENT") as string;
+    const canManage = isGlobalAdmin || actorRole === "TECHNICIAN" || actorRole === "ADMIN";
+
+    const coll = db.collection("tenants").doc(tenantId).collection("signalements");
+
+    if (action === "CREATE") {
+      const ref = coll.doc();
+      await ref.set({
+        id: ref.id, tenantId,
+        createdBy: context.auth.uid,
+        createdByName: actorName,
+        createdByRole: actorRole,
+        createdAt: new Date().toISOString(),
+        title: payload.title,
+        description: payload.description,
+        equipmentId: payload.equipmentId || null,
+        equipmentName: payload.equipmentName || null,
+        siteId: payload.siteId || null,
+        siteName: payload.siteName || null,
+        status: "NEW",
+        replies: [],
+        isArchived: false,
+      });
+      writeAuditLog({ action: "SIGNALEMENT_CREATED", actorId: context.auth.uid, actorName, tenantId, targetId: ref.id, targetName: payload.title }).catch(console.error);
+      createManagerNotification(tenantId, "Nouveau signalement", `${actorName} : "${payload.title}"`, "WARNING").catch(console.error);
+      return { id: ref.id, success: true };
+    }
+
+    if (action === "ADD_REPLY") {
+      const ref = coll.doc(payload.id);
+      const snap = await ref.get();
+      if (!snap.exists) throw new functions.https.HttpsError("not-found", "Signalement introuvable.");
+      const reply = {
+        id: `r_${context.auth.uid}_${Date.now()}`,
+        authorId: context.auth.uid,
+        authorName: actorName,
+        authorRole: actorRole,
+        message: payload.message,
+        createdAt: new Date().toISOString(),
+      };
+      const updates: Record<string, any> = { replies: FieldValue.arrayUnion(reply) };
+      if (snap.data()?.status === "NEW") updates.status = "IN_PROGRESS";
+      await ref.update(updates);
+      writeAuditLog({ action: "SIGNALEMENT_UPDATED", actorId: context.auth.uid, actorName, tenantId, targetId: payload.id, targetName: snap.data()?.title, details: { action: "reply" } }).catch(console.error);
+      return { success: true };
+    }
+
+    if (action === "UPDATE_STATUS") {
+      if (!canManage) throw new functions.https.HttpsError("permission-denied", "Droits insuffisants.");
+      const ref = coll.doc(payload.id);
+      await ref.update({ status: payload.status });
+      writeAuditLog({ action: "SIGNALEMENT_UPDATED", actorId: context.auth.uid, actorName, tenantId, targetId: payload.id, details: { status: payload.status } }).catch(console.error);
+      return { success: true };
+    }
+
+    if (action === "CLOSE") {
+      if (!canManage) throw new functions.https.HttpsError("permission-denied", "Droits insuffisants.");
+      const ref = coll.doc(payload.id);
+      const snap = await ref.get();
+      await ref.update({
+        status: "CLOSED",
+        closedAt: new Date().toISOString(),
+        closedBy: context.auth.uid,
+        closedByName: actorName,
+      });
+      writeAuditLog({ action: "SIGNALEMENT_CLOSED", actorId: context.auth.uid, actorName, tenantId, targetId: payload.id, targetName: snap.data()?.title }).catch(console.error);
+      return { success: true };
+    }
+
+    if (action === "ARCHIVE") {
+      if (!canManage) throw new functions.https.HttpsError("permission-denied", "Droits insuffisants.");
+      await coll.doc(payload.id).update({ isArchived: true, status: "ARCHIVED" });
       return { success: true };
     }
 

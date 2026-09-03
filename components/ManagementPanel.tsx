@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import QRCode from 'react-qr-code';
 import { User, Equipment, Tenant, UserRole, WeeklySchedule, DaySchedule, Site, EquipmentType, CdilUnit, VisitSession, VisitEntry } from '../types';
 import { db } from '../services/db';
-import { Plus, QrCode, RefreshCw, Printer, X, Download, User as UserIcon, Box, Pencil, Search, Check, ListChecks, MapPin, KeyRound, Power, ClipboardList, Droplets, Loader2, ChevronLeft, ChevronRight, Settings2, ShieldCheck, Gauge, LogIn, UserPlus, UserMinus, Building2, History } from 'lucide-react';
+import { Plus, QrCode, RefreshCw, Printer, X, Download, User as UserIcon, Box, Pencil, Search, Check, ListChecks, MapPin, KeyRound, Power, ClipboardList, Droplets, Loader2, ChevronLeft, ChevronRight, Settings2, ShieldCheck, Gauge, LogIn, UserPlus, UserMinus, Building2, History, Archive, ArchiveRestore } from 'lucide-react';
+import { EquipmentHistoryModal } from './EquipmentHistoryModal';
 import { Logo } from './Logo';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
@@ -13,7 +14,7 @@ interface ManagementPanelProps {
 }
 
 export const ManagementPanel: React.FC<ManagementPanelProps> = ({ user }) => {
-  const { confirm, toast, dialogNode } = useDialog();
+  const { confirm, prompt, toast, dialogNode } = useDialog();
   const [equipments, setEquipments] = useState<Equipment[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [checklists, setChecklists] = useState<any[]>([]);
@@ -21,10 +22,11 @@ export const ManagementPanel: React.FC<ManagementPanelProps> = ({ user }) => {
   const [tenant, setTenant] = useState<Tenant | undefined>(undefined);
   const [equipmentTypes, setEquipmentTypes] = useState<EquipmentType[]>([]);
   
-  const [activeTab, setActiveTab] = useState<'equipments' | 'users' | 'qrs' | 'checklists' | 'sites' | 'centrales' | 'settings'>('equipments');
+  const [activeTab, setActiveTab] = useState<'equipments' | 'users' | 'qrs' | 'checklists' | 'sites' | 'centrales' | 'settings' | 'exports'>('equipments');
   const [loading, setLoading] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
   const [isPrintMode, setIsPrintMode] = useState(false);
+  const [historyEq, setHistoryEq] = useState<Equipment | null>(null);
   
   // Create / Edit Equipment
   const [eqName, setEqName] = useState('');
@@ -67,6 +69,7 @@ export const ManagementPanel: React.FC<ManagementPanelProps> = ({ user }) => {
   const [createdUser, setCreatedUser] = useState<User | null>(null);
   const [userActionLoading, setUserActionLoading] = useState<string | null>(null);
   const [resetPwdResult, setResetPwdResult] = useState<{ userId: string; tempPassword: string } | null>(null);
+  const [editUserSites, setEditUserSites] = useState<{ userId: string; userName: string; siteIds: string[] } | null>(null);
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteLoading, setInviteLoading] = useState(false);
 
@@ -81,6 +84,15 @@ export const ManagementPanel: React.FC<ManagementPanelProps> = ({ user }) => {
   const [cdilRoomCode, setCdilRoomCode] = useState('');
   const [cdilNotes, setCdilNotes] = useState('');
   const [editingCdilUnit, setEditingCdilUnit] = useState<CdilUnit | null>(null);
+
+  // Exports
+  const [exportStartDate, setExportStartDate] = useState(() => {
+    const d = new Date(); d.setDate(d.getDate() - 30); return d.toISOString().slice(0, 10);
+  });
+  const [exportEndDate, setExportEndDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [exportSiteFilter, setExportSiteFilter] = useState('ALL');
+  const [exportCategoryFilter, setExportCategoryFilter] = useState('ALL');
+  const [exportLoading, setExportLoading] = useState(false);
 
   // Checklists
   const [chkName, setChkName] = useState('');
@@ -309,6 +321,78 @@ export const ManagementPanel: React.FC<ManagementPanelProps> = ({ user }) => {
     }
   };
 
+  const handleExportLogs = async () => {
+    setExportLoading(true);
+    try {
+      const range = { start: exportStartDate, end: exportEndDate };
+      const logs = await db.getEquipmentLogs(user.tenantId, user.role, 5000, range);
+
+      const eqMap = new Map<string, Equipment>(equipments.map(e => [e.id, e]));
+      const siteMap = new Map<string, string>(sites.map(s => [s.id, s.name]));
+
+      let filtered = logs as any[];
+      if (exportSiteFilter !== 'ALL') filtered = filtered.filter((l: any) => l.siteId === exportSiteFilter);
+      if (exportCategoryFilter !== 'ALL') filtered = filtered.filter((l: any) => {
+        const eq = eqMap.get(l.equipmentId);
+        return eq && (eq.category || eq.type) === exportCategoryFilter;
+      });
+
+      const headers = ['Date', 'Heure', 'Action', 'N° Référence interne', 'Désignation', 'Typologie', 'Local de stockage', 'Chantier', 'Technicien / Agent', 'A posteriori', 'Heure déclarée', 'Note'];
+      const rows = filtered.map((l: any) => {
+        const eq = eqMap.get(l.equipmentId);
+        const siteName = l.siteId ? (siteMap.get(l.siteId) || l.siteId) : '';
+        const dt = new Date(l.timestamp);
+        const dateStr = dt.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+        const timeStr = dt.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+        const declaredStr = l.isAPosteriori && l.declaredAt
+          ? new Date(l.declaredAt).toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+          : '';
+        return [
+          dateStr, timeStr,
+          l.action,
+          eq?.uniqueId || '',
+          l.equipmentNameSnapshot || eq?.name || '',
+          eq?.category || eq?.type || '',
+          eq?.storageLocation || '',
+          siteName,
+          l.agentNameSnapshot || '',
+          l.isAPosteriori ? 'Oui' : 'Non',
+          declaredStr,
+          l.userNote || '',
+        ];
+      });
+
+      const csv = [headers, ...rows].map(r => r.map((c: any) => `"${String(c).replace(/"/g, '""')}"`).join(';')).join('\n');
+      const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Export_MIKI_${exportStartDate}_${exportEndDate}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast(`${filtered.length} ligne${filtered.length !== 1 ? 's' : ''} exportée${filtered.length !== 1 ? 's' : ''}`);
+    } catch (e: any) {
+      toast(e.message || "Erreur lors de l'export");
+    } finally {
+      setExportLoading(false);
+    }
+  };
+
+  const handleSaveSiteAssignment = async () => {
+    if (!editUserSites) return;
+    setUserActionLoading(editUserSites.userId);
+    try {
+      await db.managerUpdateUser(user.tenantId, editUserSites.userId, { assignedSiteIds: editUserSites.siteIds }, user);
+      await refreshData();
+      setEditUserSites(null);
+      toast('Affectations enregistrées');
+    } catch (e: any) {
+      toast(e.message || 'Erreur');
+    } finally {
+      setUserActionLoading(null);
+    }
+  };
+
   // CDil handlers
   const refreshCdilData = async () => {
     setCdilLoading(true);
@@ -443,17 +527,54 @@ export const ManagementPanel: React.FC<ManagementPanelProps> = ({ user }) => {
       setSiteName(s.name); setSiteAddress(s.address || '');
   };
 
-  const checkArchiveEq = async (id: string) => {
-      const ok = await confirm({ title: 'Archiver cet équipement', message: 'Cet équipement sera archivé. Son historique sera conservé.', confirmLabel: 'Archiver', variant: 'danger' });
+  const isGlobalAdmin = user.tenantsAccess?.['platform'] === UserRole.ADMIN;
+
+  const requestArchiveEq = async (id: string, name: string) => {
+      const ok = await confirm({ title: 'Demander l\'archivage', message: `Envoyer une demande d'archivage pour "${name}" à l'administrateur ?`, confirmLabel: 'Demander', variant: 'danger' });
       if (!ok) return;
       setLoading(true);
       try {
-          await db.deleteEquipment(id, user);
+          await db.requestArchiveEquipment(id, user);
           await refreshData();
-      } catch(e) {
-      } finally {
-          setLoading(false);
-      }
+          toast('Demande envoyée à l\'administrateur', 'success');
+      } catch(e: any) {
+          toast(e.message || 'Erreur', 'error');
+      } finally { setLoading(false); }
+  };
+
+  const cancelArchiveRequestEq = async (id: string) => {
+      setLoading(true);
+      try {
+          await db.cancelArchiveRequest(id, user);
+          await refreshData();
+          toast('Demande d\'archivage annulée', 'success');
+      } catch(e: any) {
+          toast(e.message || 'Erreur', 'error');
+      } finally { setLoading(false); }
+  };
+
+  const validateArchiveEq = async (id: string, name: string) => {
+      const ok = await confirm({ title: 'Confirmer l\'archivage', message: `Archiver définitivement "${name}" ? L'historique sera conservé.`, confirmLabel: 'Archiver', variant: 'danger' });
+      if (!ok) return;
+      setLoading(true);
+      try {
+          await db.archiveEquipment(id, user);
+          await refreshData();
+          toast('Équipement archivé', 'success');
+      } catch(e: any) {
+          toast(e.message || 'Erreur', 'error');
+      } finally { setLoading(false); }
+  };
+
+  const reactivateEq = async (id: string) => {
+      setLoading(true);
+      try {
+          await db.reactivateEquipment(id, user);
+          await refreshData();
+          toast('Équipement réactivé', 'success');
+      } catch(e: any) {
+          toast(e.message || 'Erreur', 'error');
+      } finally { setLoading(false); }
   };
 
   const resetChkForm = () => {
@@ -579,20 +700,21 @@ export const ManagementPanel: React.FC<ManagementPanelProps> = ({ user }) => {
             <h2 className="text-2xl font-black text-dark tracking-tight mb-1">Gestion MIKI</h2>
             <p className="text-gray-400 text-sm font-medium">Administration du parc matériel et des utilisateurs.</p>
         </div>
-        <div className="flex bg-white p-1 rounded-2xl shadow-sm border border-border">
+        <div className="flex bg-white p-1 rounded-2xl shadow-sm border border-border overflow-x-auto no-scrollbar">
             {[
-              {id: 'equipments', label: 'ÉQUIPEMENTS', icon: <Box size={14}/>}, 
-              {id: 'users', label: 'COMPTES', icon: <UserIcon size={14}/>}, 
+              {id: 'equipments', label: 'ÉQUIPEMENTS', icon: <Box size={14}/>},
+              {id: 'users', label: 'COMPTES', icon: <UserIcon size={14}/>},
               {id: 'checklists', label: 'CHECKLISTS', icon: <ListChecks size={14}/>},
               {id: 'qrs', label: 'QR CODES', icon: <QrCode size={14}/>},
               {id: 'sites', label: 'CHANTIERS', icon: <MapPin size={14}/>},
               {id: 'centrales', label: 'CENTRALES', icon: <Droplets size={14}/>},
               {id: 'settings', label: 'PARAMÈTRES', icon: <Settings2 size={14}/>},
+              {id: 'exports', label: 'EXPORTS', icon: <Download size={14}/>},
             ].map((t) => (
-              <button 
-                key={t.id} 
-                onClick={() => { setActiveTab(t.id as any); resetEqForm(); }} 
-                className={`flex gap-2 items-center px-6 py-3 rounded-xl text-[10px] font-black uppercase tracking-[0.2em] transition-all ${activeTab === t.id ? 'bg-primary text-white shadow-lg' : 'text-gray-400'}`}
+              <button
+                key={t.id}
+                onClick={() => { setActiveTab(t.id as any); resetEqForm(); }}
+                className={`shrink-0 flex gap-2 items-center px-6 py-3 rounded-xl text-[10px] font-black uppercase tracking-[0.2em] transition-all ${activeTab === t.id ? 'bg-primary text-white shadow-lg' : 'text-gray-400'}`}
               >
                  {t.icon} {t.label}
               </button>
@@ -835,14 +957,21 @@ export const ManagementPanel: React.FC<ManagementPanelProps> = ({ user }) => {
                             </form>
                         </div>
                         ) : (
-                        <div key={eq.id} className={`p-6 bg-white border rounded-[24px] shadow-sm flex flex-col justify-between ${eq.isArchived ? 'opacity-50 grayscale' : ''}`}>
+                        <div key={eq.id} className={`p-6 bg-white border rounded-[24px] shadow-sm flex flex-col justify-between ${eq.isArchived ? 'opacity-50 grayscale' : eq.archiveRequested ? 'border-amber-200 bg-amber-50/30' : ''}`}>
                             <div>
                                 <div className="flex justify-between items-start mb-2">
                                     <h4 className="font-black text-dark text-lg truncate pr-2">{eq.name}</h4>
                                     <span className={`text-[9px] font-black px-2 py-1 rounded-lg uppercase tracking-widest shrink-0 ${eq.status === 'AVAILABLE' ? 'bg-success/10 text-success' : eq.status === 'IN_USE' ? 'bg-orange-100 text-orange-600' : 'bg-danger/10 text-danger'}`}>
-                                        {eq.status === 'AVAILABLE' ? 'DISPO' : eq.status === 'IN_USE' ? 'EMPRUNTÉ' : 'MAINT.'}
+                                        {eq.status === 'AVAILABLE' ? 'DISPO' : eq.status === 'IN_USE' ? 'EMPRUNTÉ' : eq.status === 'ARCHIVED' ? 'ARCHIVÉ' : 'MAINT.'}
                                     </span>
                                 </div>
+                                {eq.archiveRequested && !eq.isArchived && (
+                                    <div className="mb-2">
+                                        <span className="text-[9px] font-black px-2 py-1 rounded-lg uppercase tracking-widest bg-amber-100 text-amber-700 border border-amber-200">
+                                            Archivage demandé{eq.archiveRequestedByName ? ` par ${eq.archiveRequestedByName}` : ''}
+                                        </span>
+                                    </div>
+                                )}
                                 <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-1">{eq.brand} {eq.model}</p>
                                 {(eq.serialNumber || eq.uniqueId) && (
                                     <div className="mb-4">
@@ -859,24 +988,52 @@ export const ManagementPanel: React.FC<ManagementPanelProps> = ({ user }) => {
                                         <button
                                             title="Forcer la restitution"
                                             onClick={async () => {
-                                                const ok = await confirm({ title: 'Restitution forcée', message: `Remettre "${eq.name}" comme disponible ? L'emprunteur actuel sera désassocié.`, confirmLabel: 'Restituer', variant: 'danger' });
-                                                if (!ok) return;
+                                                const motif = await prompt({
+                                                    title: 'Restitution forcée',
+                                                    message: `Remettre "${eq.name}" disponible. L'emprunteur actuel sera désassocié.`,
+                                                    placeholder: 'Motif obligatoire (ex. : agent inaccessible, équipement retrouvé…)',
+                                                    confirmLabel: 'Restituer',
+                                                    variant: 'danger',
+                                                    required: true,
+                                                });
+                                                if (motif === null) return;
                                                 setLoading(true);
                                                 try {
-                                                    await db.forceReturnEquipment(eq.id, user);
+                                                    await db.forceReturnEquipment(eq.id, user, motif);
                                                     await refreshData();
                                                     toast('Restitution effectuée', 'success');
                                                 } catch (e: any) {
                                                     toast(e.message || 'Erreur', 'error');
                                                 } finally { setLoading(false); }
                                             }}
-                                            className="text-orange-500 hover:bg-orange-50 p-2 rounded-xl transition-all"
+                                            className="text-orange-500 hover:bg-orange-50 p-2.5 rounded-xl transition-all"
                                         >
                                             <LogIn size={16}/>
                                         </button>
                                     )}
-                                    {!eq.isArchived && <button onClick={() => editEquipment(eq)} className="text-primary hover:bg-primary/10 p-2 rounded-xl transition-all"><Pencil size={16}/></button>}
-                                    {!eq.isArchived && <button onClick={() => checkArchiveEq(eq.id)} className="text-danger hover:bg-red-50 p-2 rounded-xl transition-all"><X size={16}/></button>}
+                                    <button onClick={() => setHistoryEq(eq)} title="Fiche de vie" className="text-gray-400 hover:bg-gray-100 p-2.5 rounded-xl transition-all"><History size={16}/></button>
+                                    {!eq.isArchived && <button onClick={() => editEquipment(eq)} className="text-primary hover:bg-primary/10 p-2.5 rounded-xl transition-all"><Pencil size={16}/></button>}
+                                    {!eq.isArchived && (
+                                        eq.archiveRequested ? (
+                                            isGlobalAdmin ? (
+                                                <>
+                                                    <button title="Valider l'archivage" onClick={() => validateArchiveEq(eq.id, eq.name)} className="text-danger hover:bg-red-50 p-2.5 rounded-xl transition-all"><Check size={16}/></button>
+                                                    <button title="Rejeter la demande" onClick={() => cancelArchiveRequestEq(eq.id)} className="text-gray-400 hover:bg-gray-100 p-2.5 rounded-xl transition-all"><X size={16}/></button>
+                                                </>
+                                            ) : (
+                                                <button title="Archivage en attente — annuler" onClick={() => cancelArchiveRequestEq(eq.id)} className="text-amber-500 hover:bg-amber-50 p-2.5 rounded-xl transition-all"><Archive size={16}/></button>
+                                            )
+                                        ) : (
+                                            isGlobalAdmin ? (
+                                                <button title="Archiver" onClick={() => validateArchiveEq(eq.id, eq.name)} className="text-danger hover:bg-red-50 p-2.5 rounded-xl transition-all"><X size={16}/></button>
+                                            ) : (
+                                                <button title="Demander l'archivage" onClick={() => requestArchiveEq(eq.id, eq.name)} className="text-danger hover:bg-red-50 p-2.5 rounded-xl transition-all"><X size={16}/></button>
+                                            )
+                                        )
+                                    )}
+                                    {eq.isArchived && isGlobalAdmin && (
+                                        <button title="Réactiver l'équipement" onClick={() => reactivateEq(eq.id)} className="text-success hover:bg-green-50 p-2.5 rounded-xl transition-all"><ArchiveRestore size={16}/></button>
+                                    )}
                                 </div>
                             </div>
                         </div>
@@ -1094,7 +1251,10 @@ export const ManagementPanel: React.FC<ManagementPanelProps> = ({ user }) => {
              </div>
              <div className="lg:col-span-2">
                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                     {sites.map(s => (
+                     {(user.role === UserRole.TECHNICIAN && !isGlobalAdmin && (user.assignedSiteIds?.length ?? 0) > 0
+                       ? sites.filter(s => user.assignedSiteIds!.includes(s.id))
+                       : sites
+                     ).map(s => (
                          editingSite?.id === s.id ? (
                          <div key={s.id} className="md:col-span-2 bg-white border-2 border-primary/20 rounded-[24px] p-6 shadow-sm">
                              <div className="flex items-center justify-between mb-5">
@@ -1164,7 +1324,7 @@ export const ManagementPanel: React.FC<ManagementPanelProps> = ({ user }) => {
                           <select value={newUserRole} onChange={e=>setNewUserRole(e.target.value as UserRole)} className="w-full p-4 bg-gray-50 border rounded-2xl text-xs font-bold outline-none focus:border-primary">
                               <option value={UserRole.AGENT}>Agent (Utilisateur standard)</option>
                               <option value={UserRole.TECHNICIAN}>Technicien (Maintenance)</option>
-                              <option value={UserRole.MANAGER}>Manager (Admin Local)</option>
+                              <option value={UserRole.CLIENT}>Client (Lecture seule)</option>
                           </select>
                           <button type="submit" disabled={loading} className="w-full py-4 bg-primary text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-xl disabled:opacity-50">Créer</button>
                       </form>
@@ -1230,15 +1390,28 @@ export const ManagementPanel: React.FC<ManagementPanelProps> = ({ user }) => {
                                          onClick={() => handleResetUserPwd(u.id)}
                                          disabled={userActionLoading === u.id}
                                          title="Réinitialiser le mot de passe"
-                                         className="text-primary hover:bg-primary/10 p-2 rounded-xl transition-all disabled:opacity-40"
+                                         className="text-primary hover:bg-primary/10 p-2.5 rounded-xl transition-all disabled:opacity-40"
                                      >
                                          {userActionLoading === u.id ? <RefreshCw size={16} className="animate-spin"/> : <KeyRound size={16}/>}
                                      </button>
+                                     {u.tenantsAccess?.[user.tenantId] === UserRole.TECHNICIAN && (
+                                         <button
+                                             onClick={() => setEditUserSites({ userId: u.id, userName: `${u.firstName} ${u.lastName}`, siteIds: u.assignedSiteIds || [] })}
+                                             disabled={userActionLoading === u.id}
+                                             title={`Sites assignés (${u.assignedSiteIds?.length ?? 0})`}
+                                             className="relative text-indigo-500 hover:bg-indigo-50 p-2.5 rounded-xl transition-all disabled:opacity-40"
+                                         >
+                                             <MapPin size={16}/>
+                                             {(u.assignedSiteIds?.length ?? 0) > 0 && (
+                                               <span className="absolute -top-1 -right-1 bg-indigo-500 text-white text-[9px] font-black rounded-full w-4 h-4 flex items-center justify-center leading-none">{u.assignedSiteIds!.length}</span>
+                                             )}
+                                         </button>
+                                     )}
                                      <button
                                          onClick={() => handleToggleDisable(u)}
                                          disabled={userActionLoading === u.id}
                                          title={u.isDisabled ? 'Réactiver' : 'Désactiver'}
-                                         className={`p-2 rounded-xl transition-all disabled:opacity-40 ${u.isDisabled ? 'text-success hover:bg-success/10' : 'text-warning hover:bg-orange-50'}`}
+                                         className={`p-2.5 rounded-xl transition-all disabled:opacity-40 ${u.isDisabled ? 'text-success hover:bg-success/10' : 'text-warning hover:bg-orange-50'}`}
                                      >
                                          <Power size={16}/>
                                      </button>
@@ -1247,7 +1420,7 @@ export const ManagementPanel: React.FC<ManagementPanelProps> = ({ user }) => {
                                              onClick={() => handleRemoveTenantAccess(u)}
                                              disabled={userActionLoading === u.id}
                                              title="Retirer l'accès à ce site"
-                                             className="text-danger hover:bg-red-50 p-2 rounded-xl transition-all disabled:opacity-40"
+                                             className="text-danger hover:bg-red-50 p-2.5 rounded-xl transition-all disabled:opacity-40"
                                          >
                                              <UserMinus size={16}/>
                                          </button>
@@ -1374,10 +1547,10 @@ export const ManagementPanel: React.FC<ManagementPanelProps> = ({ user }) => {
                           <History size={14}/> Historique
                         </button>
                         <div className="flex gap-2">
-                          <button onClick={() => editCdilUnit(unit)} className="text-gray-400 hover:text-primary hover:bg-primary/5 p-2 rounded-xl transition-all" title="Modifier">
+                          <button onClick={() => editCdilUnit(unit)} className="text-gray-400 hover:text-primary hover:bg-primary/5 p-2.5 rounded-xl transition-all" title="Modifier">
                             <Pencil size={15}/>
                           </button>
-                          <button onClick={() => handleDeactivateCdilUnit(unit.id)} className="text-danger hover:bg-red-50 p-2 rounded-xl transition-all" title="Désactiver">
+                          <button onClick={() => handleDeactivateCdilUnit(unit.id)} className="text-danger hover:bg-red-50 p-2.5 rounded-xl transition-all" title="Désactiver">
                             <X size={16}/>
                           </button>
                         </div>
@@ -1406,7 +1579,7 @@ export const ManagementPanel: React.FC<ManagementPanelProps> = ({ user }) => {
                   const nbSimple = session.entries.filter(e => [String(e.buse), String(e.crepine), String(e.ligne)].includes('1') && ![String(e.buse), String(e.crepine), String(e.ligne)].includes('2')).length;
                   const nbDouble = session.entries.filter(e => [String(e.buse), String(e.crepine), String(e.ligne)].includes('2')).length;
                   return (
-                  <div key={session.id} className="bg-white border rounded-[24px] p-5 shadow-sm flex items-center justify-between gap-4">
+                  <div key={session.id} className="bg-white border rounded-[24px] p-5 shadow-sm flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4">
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2 mb-1">
                         <div className="font-black text-dark text-sm truncate">{session.title}</div>
@@ -1425,7 +1598,7 @@ export const ManagementPanel: React.FC<ManagementPanelProps> = ({ user }) => {
                         {nbDouble > 0 && <span className="text-[9px] font-black px-2 py-0.5 rounded-md border bg-red-50 text-red-600 border-red-200">{nbDouble} × 2 remplacements</span>}
                       </div>
                     </div>
-                    <button onClick={() => exportCdilSessionCsv(session)} className="shrink-0 flex items-center gap-2 px-5 py-2.5 bg-gray-100 hover:bg-primary hover:text-white text-dark rounded-xl text-[10px] font-black uppercase tracking-widest transition-all">
+                    <button onClick={() => exportCdilSessionCsv(session)} className="w-full sm:w-auto shrink-0 flex items-center justify-center gap-2 px-5 py-2.5 bg-gray-100 hover:bg-primary hover:text-white text-dark rounded-xl text-[10px] font-black uppercase tracking-widest transition-all">
                       <Download size={13}/> CSV
                     </button>
                   </div>
@@ -1610,7 +1783,160 @@ export const ManagementPanel: React.FC<ManagementPanelProps> = ({ user }) => {
         );
       })()}
 
+      {activeTab === 'exports' && (
+        <div className="max-w-2xl mx-auto animate-in fade-in space-y-8">
+          {/* Export mouvements */}
+          <div className="bg-white border border-border rounded-[32px] p-8 shadow-sm">
+            <h3 className="font-black text-dark text-base uppercase tracking-widest mb-1 flex items-center gap-2"><Download size={16} className="text-primary"/> Export des mouvements</h3>
+            <p className="text-xs font-bold text-gray-400 mb-6">CSV · UTF-8 · séparateur ;</p>
+
+            <div className="space-y-5">
+              {/* Date range */}
+              <div>
+                <label className="text-[9px] font-black uppercase tracking-widest text-gray-400 block mb-2">Période</label>
+                <div className="flex gap-3 items-center">
+                  <input
+                    type="date"
+                    value={exportStartDate}
+                    max={exportEndDate}
+                    onChange={e => setExportStartDate(e.target.value)}
+                    className="flex-1 p-3 bg-gray-50 border border-border rounded-2xl text-sm font-bold outline-none focus:border-primary"
+                  />
+                  <span className="text-gray-400 font-black text-sm">→</span>
+                  <input
+                    type="date"
+                    value={exportEndDate}
+                    min={exportStartDate}
+                    max={new Date().toISOString().slice(0, 10)}
+                    onChange={e => setExportEndDate(e.target.value)}
+                    className="flex-1 p-3 bg-gray-50 border border-border rounded-2xl text-sm font-bold outline-none focus:border-primary"
+                  />
+                </div>
+              </div>
+
+              {/* Site filter */}
+              <div>
+                <label className="text-[9px] font-black uppercase tracking-widest text-gray-400 block mb-2">Chantier</label>
+                <select
+                  value={exportSiteFilter}
+                  onChange={e => setExportSiteFilter(e.target.value)}
+                  className="w-full p-3 bg-gray-50 border border-border rounded-2xl text-sm font-bold outline-none focus:border-primary"
+                >
+                  <option value="ALL">Tous les chantiers</option>
+                  {sites.filter(s => s.status === 'ACTIVE').map(s => (
+                    <option key={s.id} value={s.id}>{s.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Category filter */}
+              <div>
+                <label className="text-[9px] font-black uppercase tracking-widest text-gray-400 block mb-2">Typologie machine</label>
+                <select
+                  value={exportCategoryFilter}
+                  onChange={e => setExportCategoryFilter(e.target.value)}
+                  className="w-full p-3 bg-gray-50 border border-border rounded-2xl text-sm font-bold outline-none focus:border-primary"
+                >
+                  <option value="ALL">Toutes les typologies</option>
+                  {Array.from(new Set(equipments.map(e => e.category || e.type).filter(Boolean))).sort().map(cat => (
+                    <option key={cat} value={cat}>{cat}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Colonnes exportées */}
+              <div className="bg-gray-50 border border-border rounded-2xl p-4">
+                <p className="text-[9px] font-black uppercase tracking-widest text-gray-400 mb-2">Colonnes exportées</p>
+                <p className="text-xs font-bold text-gray-500 leading-relaxed">
+                  Date · Heure · Action · N° Référence interne · Désignation · Typologie · Local de stockage · Chantier · Technicien/Agent · A posteriori · Heure déclarée · Note
+                </p>
+              </div>
+
+              <button
+                onClick={handleExportLogs}
+                disabled={exportLoading || !exportStartDate || !exportEndDate}
+                className="w-full py-4 bg-primary text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-lg disabled:opacity-50 transition-all flex items-center justify-center gap-2"
+              >
+                {exportLoading ? <><RefreshCw size={14} className="animate-spin"/> Génération en cours...</> : <><Download size={14}/> Télécharger CSV</>}
+              </button>
+            </div>
+          </div>
+
+          {/* Export CDil */}
+          <div className="bg-white border border-border rounded-[32px] p-8 shadow-sm">
+            <h3 className="font-black text-dark text-base uppercase tracking-widest mb-1 flex items-center gap-2"><Droplets size={16} className="text-primary"/> Export CDil</h3>
+            <p className="text-xs font-bold text-gray-400 mb-6">Exporter une session de visite depuis l'onglet Centrales.</p>
+            <button
+              onClick={() => setActiveTab('centrales')}
+              className="px-6 py-3 border border-border rounded-2xl text-[10px] font-black uppercase tracking-widest text-gray-500 hover:border-primary/30 hover:text-primary transition-all"
+            >
+              Aller aux Centrales →
+            </button>
+          </div>
+        </div>
+      )}
+
       {dialogNode}
+      {historyEq && (
+        <EquipmentHistoryModal
+          equipment={historyEq}
+          tenantId={user.tenantId}
+          onClose={() => setHistoryEq(null)}
+        />
+      )}
+
+      {/* Modal affectation sites TECHNICIAN */}
+      {editUserSites && (
+        <div className="fixed inset-0 z-[500] flex items-end justify-center sm:items-center">
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setEditUserSites(null)}/>
+          <div className="relative w-full max-w-md bg-white rounded-t-[32px] sm:rounded-[32px] p-8 shadow-2xl max-h-[80vh] flex flex-col">
+            <div className="mb-6 shrink-0">
+              <p className="text-[9px] font-black uppercase tracking-widest text-indigo-500 mb-1">Affectation des sites</p>
+              <h2 className="font-black text-dark text-lg">{editUserSites.userName}</h2>
+              <p className="text-xs font-bold text-gray-400 mt-1">
+                {editUserSites.siteIds.length === 0 ? 'Accès à tous les sites (aucune restriction)' : `${editUserSites.siteIds.length} site${editUserSites.siteIds.length > 1 ? 's' : ''} sélectionné${editUserSites.siteIds.length > 1 ? 's' : ''}`}
+              </p>
+            </div>
+            <div className="flex-1 overflow-y-auto space-y-2 mb-6 no-scrollbar">
+              {sites.filter(s => s.status === 'ACTIVE').length === 0 && (
+                <p className="text-sm text-gray-400 font-bold text-center py-8">Aucun site actif</p>
+              )}
+              {sites.filter(s => s.status === 'ACTIVE').map(s => {
+                const checked = editUserSites.siteIds.includes(s.id);
+                return (
+                  <button
+                    key={s.id}
+                    type="button"
+                    onClick={() => setEditUserSites(prev => prev ? {
+                      ...prev,
+                      siteIds: checked ? prev.siteIds.filter(id => id !== s.id) : [...prev.siteIds, s.id]
+                    } : prev)}
+                    className={`w-full flex items-center gap-3 p-4 rounded-2xl border transition-all text-left ${checked ? 'border-indigo-300 bg-indigo-50' : 'border-border bg-white hover:border-indigo-200'}`}
+                  >
+                    <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center shrink-0 transition-all ${checked ? 'bg-indigo-500 border-indigo-500' : 'border-gray-300'}`}>
+                      {checked && <Check size={12} className="text-white"/>}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="font-black text-dark text-sm truncate">{s.name}</p>
+                      {s.address && <p className="text-[10px] font-bold text-gray-400 truncate">{s.address}</p>}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+            <div className="flex gap-3 shrink-0">
+              <button onClick={() => setEditUserSites(null)} className="flex-1 py-4 border border-border rounded-2xl text-[10px] font-black uppercase tracking-widest text-gray-500 hover:bg-gray-50 transition-all">Annuler</button>
+              <button
+                onClick={handleSaveSiteAssignment}
+                disabled={userActionLoading === editUserSites.userId}
+                className="flex-1 py-4 bg-indigo-500 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-lg disabled:opacity-50 transition-all"
+              >
+                {userActionLoading === editUserSites.userId ? 'Enregistrement...' : 'Enregistrer'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

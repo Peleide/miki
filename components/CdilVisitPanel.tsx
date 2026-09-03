@@ -513,11 +513,11 @@ export const CdilVisitPanel: React.FC<CdilVisitPanelProps> = ({ user }) => {
           </div>
         )}
 
-        <div className="flex justify-end gap-3 mt-6">
-          <button onClick={handleSave} disabled={saving} className="flex items-center gap-2 px-8 py-4 bg-gray-100 text-dark rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-gray-200 transition-all disabled:opacity-50">
+        <div className="flex flex-col sm:flex-row sm:justify-end gap-3 mt-6">
+          <button onClick={handleSave} disabled={saving} className="flex items-center justify-center gap-2 px-8 py-4 bg-gray-100 text-dark rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-gray-200 transition-all disabled:opacity-50">
             {saving ? <Loader2 size={14} className="animate-spin"/> : <Save size={14}/>} Enregistrer le brouillon
           </button>
-          <button onClick={handleComplete} disabled={saving} className="flex items-center gap-2 px-8 py-4 bg-success text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-xl shadow-success/20 hover:scale-105 transition-all disabled:opacity-50">
+          <button onClick={handleComplete} disabled={saving} className="flex items-center justify-center gap-2 px-8 py-4 bg-success text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-xl shadow-success/20 hover:scale-105 transition-all disabled:opacity-50">
             <CheckCircle size={14}/> Clôturer la visite
           </button>
         </div>
@@ -626,7 +626,7 @@ export const CdilVisitPanel: React.FC<CdilVisitPanelProps> = ({ user }) => {
       )}
 
       {/* Onglets */}
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex flex-wrap items-center gap-3 mb-4">
         <div className="flex bg-white p-1 rounded-2xl shadow-sm border border-border w-fit">
           {([['DRAFT', 'En cours', drafts.length], ['COMPLETED', 'Historique', completed.length]] as const).map(([tab, label, count]) => (
             <button

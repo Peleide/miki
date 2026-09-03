@@ -1,6 +1,6 @@
 import React, { ReactNode, useState, useEffect } from 'react';
 import { User, UserRole, Tenant, AppNotification } from '../types';
-import { LogOut, LayoutDashboard, QrCode, Settings, Shield, ChevronDown, Wrench, Bell, ClipboardList } from 'lucide-react';
+import { LogOut, LayoutDashboard, QrCode, Settings, Shield, ChevronDown, Wrench, Bell, ClipboardList, Flag } from 'lucide-react';
 import { db } from '../services/db';
 import { Logo } from './Logo';
 
@@ -9,8 +9,8 @@ interface LayoutProps {
   user: User;
   isOnline: boolean;
   onLogout: () => void;
-  currentView: 'dashboard' | 'agent' | 'management' | 'admin' | 'tickets' | 'cdil';
-  onNavigate: (view: 'dashboard' | 'agent' | 'management' | 'admin' | 'tickets' | 'cdil') => void;
+  currentView: 'dashboard' | 'agent' | 'management' | 'admin' | 'tickets' | 'cdil' | 'signalements';
+  onNavigate: (view: 'dashboard' | 'agent' | 'management' | 'admin' | 'tickets' | 'cdil' | 'signalements') => void;
   onSwitchTenant?: (tenantId: string) => void;
   hideBottomNav?: boolean;
 }
@@ -81,19 +81,19 @@ export const Layout: React.FC<LayoutProps> = ({
     navItems.push({ id: 'admin', label: 'ADMIN', icon: Shield });
   }
   
-  if (user.role === UserRole.MANAGER) {
+  if (user.role === UserRole.TECHNICIAN) {
     navItems.push({ id: 'management', label: 'GESTION', icon: Settings });
     navItems.push({ id: 'dashboard', label: 'SUIVI', icon: LayoutDashboard });
     navItems.push({ id: 'tickets', label: 'TICKETS', icon: Wrench });
+    navItems.push({ id: 'cdil', label: 'VISITES', icon: ClipboardList });
+    navItems.push({ id: 'signalements', label: 'SIGNALEMENTS', icon: Flag });
     navItems.push({ id: 'agent', label: 'MATÉRIEL', icon: QrCode });
   } else if (user.role === UserRole.CLIENT) {
     navItems.push({ id: 'dashboard', label: 'SUIVI', icon: LayoutDashboard });
-  } else if (user.role === UserRole.TECHNICIAN) {
-    navItems.push({ id: 'tickets', label: 'TICKETS', icon: Wrench });
-    navItems.push({ id: 'cdil', label: 'VISITES', icon: ClipboardList });
-    navItems.push({ id: 'agent', label: 'MATÉRIEL', icon: QrCode });
+    navItems.push({ id: 'signalements', label: 'SIGNALEMENTS', icon: Flag });
   } else if (user.role === UserRole.AGENT) {
     navItems.push({ id: 'agent', label: 'MATÉRIEL', icon: QrCode });
+    navItems.push({ id: 'signalements', label: 'SIGNALEMENTS', icon: Flag });
   }
 
   const showSwitcher = availableTenants.length > 1;

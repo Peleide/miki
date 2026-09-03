@@ -1,6 +1,5 @@
 export enum UserRole {
   ADMIN = 'ADMIN',
-  MANAGER = 'MANAGER',
   TECHNICIAN = 'TECHNICIAN',
   AGENT = 'AGENT',
   CLIENT = 'CLIENT',
@@ -143,8 +142,9 @@ export interface User {
   activeEquipmentId?: string | null;
   
   // DB STORAGE
-  tenantsAccess: { [tenantId: string]: UserRole }; 
+  tenantsAccess: { [tenantId: string]: UserRole };
   accessibleTenantIds: string[];
+  assignedSiteIds?: string[];
 
   isArchived: boolean;
   isDisabled: boolean; 
@@ -231,6 +231,12 @@ export interface Equipment {
 
   lastUsageTimestamp?: string;
   isArchived: boolean;
+
+  // Archive request circuit (TECHNICIAN requests, ADMIN validates)
+  archiveRequested?: boolean;
+  archiveRequestedAt?: string;
+  archiveRequestedBy?: string;
+  archiveRequestedByName?: string;
 }
 
 export interface EquipmentLog {
@@ -251,9 +257,13 @@ export interface EquipmentLog {
   sessionId?: string; 
   
   agentNameSnapshot?: string;
-  equipmentNameSnapshot?: string; // Captured at event time
+  equipmentNameSnapshot?: string;
   clientTimestamp?: string;
   serverTimestamp?: any;
+
+  // Saisie a posteriori
+  isAPosteriori?: boolean;
+  declaredAt?: string;
 }
 
 export interface IncidentReport { // Ticketing System
@@ -280,6 +290,42 @@ export interface IncidentReport { // Ticketing System
   
   timestamp: string;
   serverTimestamp?: any;
+}
+
+// --- SIGNALEMENTS ---
+
+export type SignalementStatus = 'NEW' | 'IN_PROGRESS' | 'RESOLVED' | 'CLOSED' | 'ARCHIVED';
+
+export interface SignalementReply {
+  id: string;
+  authorId: string;
+  authorName: string;
+  authorRole: UserRole;
+  message: string;
+  createdAt: string;
+}
+
+export interface Signalement {
+  id: string;
+  tenantId: string;
+  createdBy: string;
+  createdByName: string;
+  createdByRole: UserRole;
+  createdAt: string;
+  title: string;
+  description: string;
+  equipmentId?: string;
+  equipmentName?: string;
+  siteId?: string;
+  siteName?: string;
+  status: SignalementStatus;
+  replies: SignalementReply[];
+  assignedTo?: string;
+  assignedToName?: string;
+  closedAt?: string;
+  closedBy?: string;
+  closedByName?: string;
+  isArchived?: boolean;
 }
 
 export interface ChecklistItem {
