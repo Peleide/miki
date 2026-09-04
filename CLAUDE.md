@@ -13,11 +13,23 @@ cd functions && npm run build && cd ..
 
 # 2. Lancer les émulateurs Firebase
 firebase emulators:start
-# Auth:9099 | Functions:5001 | Firestore:8080
+# Auth:9099 | Functions:5001 | Firestore:8080 | Storage:9199 | UI:4000
 
-# 3. Frontend (autre terminal)
+# 3. Seeder les données de test (premier démarrage ou reset)
+node scripts/seedEmulator.mjs
+# Crée : 4 comptes, 3 sites, 10 équipements, 7 mouvements, 3 tickets, 3 signalements, 5 unités CDil + 2 sessions
+
+# 4. Frontend (autre terminal)
 npm run dev   # http://localhost:5173
 ```
+
+### Comptes de test
+| Email | Mot de passe | Rôle | Périmètre |
+|---|---|---|---|
+| admin@miki.nc | password123 | ADMIN | Plateforme entière |
+| tech@miki.nc | password123 | TECHNICIAN | Hôpital Nord + Clinique Sud |
+| agent@miki.nc | password123 | AGENT | Toute la Clinique Test |
+| client@miki.nc | password123 | CLIENT | Hôpital Nord uniquement |
 
 ## Stack technique
 | Couche | Technologie |
