@@ -236,6 +236,7 @@ CLIENT     → dashboard, signalements (périmètre restreint)
 - [x] **Restitution forcée avec motif** : `prompt()` dans `useDialog` (textarea + required), CF `FORCE_RETURN` + log `RESTITUTION_FORCED` avec motif
 - [x] **Module signalements** : `SignalementPanel`, CF `manageSignalement` — CREATE / ADD_REPLY / UPDATE_STATUS / CLOSE / ARCHIVE — statuts provisoires (NEW/IN_PROGRESS/RESOLVED/CLOSED/ARCHIVED), nav TECHNICIAN + AGENT + CLIENT
 - [x] **Saisie a posteriori** : `isAPosteriori` + `declaredAt` sur `EquipmentLog`, toggle UI amber + datetime-local dans AgentView, badge dans EquipmentHistoryModal
+- [x] **Anomalie constatée** : champ `userNote` optionnel sur TAKE/RETURN dans AgentView, stocké sur le log, visible dans fiche de vie + export CSV colonne Note
 - [x] **Fiche de vie équipement** : `EquipmentHistoryModal` — timeline unifiée (logs + tickets + signalements), compteurs, icônes par type, bouton History sur chaque carte équipement
 - [x] **Multi-sites Technicien** : `assignedSiteIds?: string[]` sur `User`, modal checkboxes dans ManagementPanel (carte TECHNICIAN), filtre sites tab + AgentView
 
@@ -247,6 +248,7 @@ CLIENT     → dashboard, signalements (périmètre restreint)
 ### P3 — Exports enrichis ✅ TERMINÉ
 - [x] **Export mouvements filtrable** : nouvel onglet "Exports" dans ManagementPanel — filtres par période, chantier, typologie machine
 - [x] **Champs étendus** : Date · Heure · Action · N° Référence interne · Désignation · Typologie · Local de stockage · Chantier · Technicien/Agent · A posteriori · Heure déclarée · **Durée** · Note
+- [x] **Durée TAKE→RETURN** dans l'export : pré-calcul chrono des paires par équipement, colonne Durée remplie sur les lignes RETURN/FORCE_RETURN
 - [x] **Format CSV** : BOM UTF-8, séparateur `;` (même pattern que CDil) — Excel/PDF restent à définir avec Kimi si besoin
 - [x] **Export CDil** : lien de raccourci dans l'onglet Exports vers le tab Centrales (export par session déjà existant)
 
