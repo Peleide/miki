@@ -242,11 +242,11 @@ CLIENT     → dashboard, signalements (périmètre restreint)
 ### P2 — Espace Client ✅ TERMINÉ
 - [x] **Dashboard CLIENT restreint** : `visibleEquipments` / `visibleLogs` / `visibleReports` filtrés par `user.assignedSiteIds` — métriques et tous les tabs recalculés dessus. Bandeau contextuel si vue restreinte. Panneau Checklists masqué pour CLIENT (trop technique).
 - [x] **Accès CLIENT aux signalements** : déjà fonctionnel depuis P1 — CLIENT voit ses propres signalements, peut créer et répondre, ne peut pas changer les statuts.
-- [x] **Durée des interventions** : aucune durée calculée/affichée actuellement dans le code — à surveiller lors de l'ajout de cette feature (toute durée doit être derrière `{isManager && ...}`).
+- [x] **Durée des interventions** : `durationMinutes?` sur `EquipmentLog`, saisie manuelle dans TicketPanel (résolution), durée TAKE→RETURN calculée automatiquement — visible Admin/Technicien uniquement (`isManager` prop sur `EquipmentHistoryModal`), colonne "Durée" dans export CSV.
 
 ### P3 — Exports enrichis ✅ TERMINÉ
 - [x] **Export mouvements filtrable** : nouvel onglet "Exports" dans ManagementPanel — filtres par période, chantier, typologie machine
-- [x] **Champs étendus** : Date · Heure · Action · N° Référence interne · Désignation · Typologie · Local de stockage · Chantier · Technicien/Agent · A posteriori · Heure déclarée · Note
+- [x] **Champs étendus** : Date · Heure · Action · N° Référence interne · Désignation · Typologie · Local de stockage · Chantier · Technicien/Agent · A posteriori · Heure déclarée · **Durée** · Note
 - [x] **Format CSV** : BOM UTF-8, séparateur `;` (même pattern que CDil) — Excel/PDF restent à définir avec Kimi si besoin
 - [x] **Export CDil** : lien de raccourci dans l'onglet Exports vers le tab Centrales (export par session déjà existant)
 
