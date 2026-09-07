@@ -203,6 +203,7 @@ export const processEquipmentScan = functions
       }
 
       if (details?.siteId) logRecord.siteId = details.siteId;
+      if (details?.durationMinutes != null) logRecord.durationMinutes = details.durationMinutes;
 
       let newStatus = eqData?.status || "AVAILABLE";
       let userUpdates: any = {};

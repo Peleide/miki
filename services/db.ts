@@ -37,7 +37,7 @@ class DatabaseService {
 
   // --- WRITE OPERATIONS ---
 
-  async processEquipmentScan(equipmentId: string, action: EquipmentLogAction, user: User, details?: { validationQr?: string, quantity?: number, userNote?: string, siteId?: string }) {
+  async processEquipmentScan(equipmentId: string, action: EquipmentLogAction, user: User, details?: { validationQr?: string, quantity?: number, userNote?: string, siteId?: string, declaredAt?: string, durationMinutes?: number }) {
       return await this.call('processEquipmentScan', { 
           equipmentId, 
           action, 

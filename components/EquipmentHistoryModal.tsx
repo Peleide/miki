@@ -7,6 +7,14 @@ interface Props {
   equipment: Equipment;
   tenantId: string;
   onClose: () => void;
+  isManager?: boolean;
+}
+
+function formatDuration(minutes: number): string {
+  if (minutes < 60) return `${minutes} min`;
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return m > 0 ? `${h}h${String(m).padStart(2, '0')}` : `${h}h00`;
 }
 
 type TimelineEntry =
@@ -41,7 +49,7 @@ const TICKET_STATUS_LABEL: Record<string, string> = {
   OPEN: 'Ouvert', IN_PROGRESS: 'En cours', RESOLVED: 'Résolu', ARCHIVED: 'Clôturé',
 };
 
-export const EquipmentHistoryModal: React.FC<Props> = ({ equipment, tenantId, onClose }) => {
+export const EquipmentHistoryModal: React.FC<Props> = ({ equipment, tenantId, onClose, isManager }) => {
   const [loading, setLoading] = useState(true);
   const [timeline, setTimeline] = useState<TimelineEntry[]>([]);
   const [counts, setCounts] = useState({ logs: 0, tickets: 0, signalements: 0 });
@@ -67,6 +75,23 @@ export const EquipmentHistoryModal: React.FC<Props> = ({ equipment, tenantId, on
       }
     })();
   }, [equipment.id, tenantId]);
+
+  // Paire TAKE→RETURN : durée d'utilisation (chronologique, oldest first)
+  const usageDurations = new Map<string, number>();
+  if (isManager) {
+    let lastTake: { id: string; ts: string } | null = null;
+    [...timeline].reverse().forEach(entry => {
+      if (entry.kind !== 'log') return;
+      const log = entry.data;
+      if (log.action === 'TAKE') {
+        lastTake = { id: log.id, ts: log.timestamp };
+      } else if ((log.action === 'RETURN' || log.action === 'FORCE_RETURN') && lastTake) {
+        const mins = Math.round((new Date(log.timestamp).getTime() - new Date(lastTake.ts).getTime()) / 60000);
+        if (mins > 0) usageDurations.set(log.id, mins);
+        lastTake = null;
+      }
+    });
+  }
 
   return (
     <div className="fixed inset-0 z-[500] flex justify-end">
@@ -164,6 +189,16 @@ export const EquipmentHistoryModal: React.FC<Props> = ({ equipment, tenantId, on
                             </p>
                           )}
                           {log.userNote && <p className="text-xs text-gray-400 font-medium mt-1 italic">"{log.userNote}"</p>}
+                          {isManager && usageDurations.has(log.id) && (
+                            <p className="text-[9px] font-bold text-indigo-500 mt-0.5">
+                              Durée d'utilisation : {formatDuration(usageDurations.get(log.id)!)}
+                            </p>
+                          )}
+                          {isManager && log.durationMinutes != null && (
+                            <p className="text-[9px] font-bold text-indigo-500 mt-0.5">
+                              Durée d'intervention : {formatDuration(log.durationMinutes)}
+                            </p>
+                          )}
                           <p className="text-[9px] font-black text-gray-300 uppercase tracking-widest mt-1">{date}</p>
                         </div>
                       </div>

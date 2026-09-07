@@ -5,7 +5,7 @@ export enum UserRole {
   CLIENT = 'CLIENT',
 }
 
-export type EquipmentLogAction = 'TAKE' | 'RETURN' | 'REPORT' | 'INTERVENTION' | 'CREATE' | 'ARCHIVE';
+export type EquipmentLogAction = 'TAKE' | 'RETURN' | 'FORCE_RETURN' | 'REPORT' | 'INTERVENTION' | 'CREATE' | 'ARCHIVE';
 
 export interface Site {
   id: string;
@@ -264,6 +264,9 @@ export interface EquipmentLog {
   // Saisie a posteriori
   isAPosteriori?: boolean;
   declaredAt?: string;
+
+  // Durée (saisie manuelle pour INTERVENTION)
+  durationMinutes?: number;
 }
 
 export interface IncidentReport { // Ticketing System

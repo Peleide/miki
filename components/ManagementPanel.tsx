@@ -337,7 +337,13 @@ export const ManagementPanel: React.FC<ManagementPanelProps> = ({ user }) => {
         return eq && (eq.category || eq.type) === exportCategoryFilter;
       });
 
-      const headers = ['Date', 'Heure', 'Action', 'N° Référence interne', 'Désignation', 'Typologie', 'Local de stockage', 'Chantier', 'Technicien / Agent', 'A posteriori', 'Heure déclarée', 'Note'];
+      const formatDur = (min: number) => {
+        if (min < 60) return `${min} min`;
+        const h = Math.floor(min / 60); const m = min % 60;
+        return m > 0 ? `${h}h${String(m).padStart(2, '0')}` : `${h}h00`;
+      };
+
+      const headers = ['Date', 'Heure', 'Action', 'N° Référence interne', 'Désignation', 'Typologie', 'Local de stockage', 'Chantier', 'Technicien / Agent', 'A posteriori', 'Heure déclarée', 'Durée', 'Note'];
       const rows = filtered.map((l: any) => {
         const eq = eqMap.get(l.equipmentId);
         const siteName = l.siteId ? (siteMap.get(l.siteId) || l.siteId) : '';
@@ -347,6 +353,7 @@ export const ManagementPanel: React.FC<ManagementPanelProps> = ({ user }) => {
         const declaredStr = l.isAPosteriori && l.declaredAt
           ? new Date(l.declaredAt).toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
           : '';
+        const durationStr = l.durationMinutes != null ? formatDur(l.durationMinutes) : '';
         return [
           dateStr, timeStr,
           l.action,
@@ -358,6 +365,7 @@ export const ManagementPanel: React.FC<ManagementPanelProps> = ({ user }) => {
           l.agentNameSnapshot || '',
           l.isAPosteriori ? 'Oui' : 'Non',
           declaredStr,
+          durationStr,
           l.userNote || '',
         ];
       });
@@ -1882,6 +1890,7 @@ export const ManagementPanel: React.FC<ManagementPanelProps> = ({ user }) => {
           equipment={historyEq}
           tenantId={user.tenantId}
           onClose={() => setHistoryEq(null)}
+          isManager={true}
         />
       )}
 

@@ -42,6 +42,7 @@ export const TicketPanel: React.FC<TicketPanelProps> = ({ user }) => {
 
   const [selectedTicket, setSelectedTicket] = useState<IncidentReport | null>(null);
   const [resolutionNote, setResolutionNote] = useState('');
+  const [resolutionDuration, setResolutionDuration] = useState<number | ''>('');
   const [modalStep, setModalStep] = useState<'detail' | 'checklist'>('detail');
   const [activeChecklist, setActiveChecklist] = useState<any>(null);
   const [checklistAnswers, setChecklistAnswers] = useState<any>({});
@@ -74,6 +75,7 @@ export const TicketPanel: React.FC<TicketPanelProps> = ({ user }) => {
   const closeModal = () => {
     setSelectedTicket(null);
     setResolutionNote('');
+    setResolutionDuration('');
     setModalStep('detail');
     setActiveChecklist(null);
     setChecklistAnswers({});
@@ -82,6 +84,7 @@ export const TicketPanel: React.FC<TicketPanelProps> = ({ user }) => {
   const openTicket = (ticket: IncidentReport) => {
     setSelectedTicket(ticket);
     setResolutionNote('');
+    setResolutionDuration('');
     setModalStep('detail');
     setActiveChecklist(null);
     setChecklistAnswers({});
@@ -136,7 +139,10 @@ export const TicketPanel: React.FC<TicketPanelProps> = ({ user }) => {
       await db.updateReportStatus(user.tenantId, ticketId, 'RESOLVED', user.id, resolutionNote || undefined);
       const ticket = reports.find(r => r.id === ticketId);
       if (ticket?.equipmentId && equipments.find(e => e.id === ticket.equipmentId)) {
-        await db.processEquipmentScan(ticket.equipmentId, 'INTERVENTION', user, { userNote: `Résolution Incident ${ticketId}` });
+        await db.processEquipmentScan(ticket.equipmentId, 'INTERVENTION', user, {
+          userNote: `Résolution Incident ${ticketId}`,
+          ...(resolutionDuration !== '' ? { durationMinutes: Number(resolutionDuration) } : {}),
+        });
       }
       await loadData();
       closeModal();
@@ -328,17 +334,30 @@ export const TicketPanel: React.FC<TicketPanelProps> = ({ user }) => {
                     </div>
                   )}
 
-                  {/* Resolution note input (for IN_PROGRESS or manager on any) */}
+                  {/* Resolution note + duration inputs */}
                   {(selectedTicket.status === 'IN_PROGRESS' || (isManager && selectedTicket.status !== 'ARCHIVED')) && !selectedTicket.resolutionNote && (
-                    <div>
-                      <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-2 block">Note de résolution (optionnelle)</label>
-                      <textarea
-                        rows={3}
-                        placeholder="Décrivez l'intervention réalisée..."
-                        value={resolutionNote}
-                        onChange={e => setResolutionNote(e.target.value)}
-                        className="w-full p-4 border-2 border-border rounded-2xl text-sm font-medium focus:border-primary outline-none resize-none leading-relaxed"
-                      />
+                    <div className="space-y-3">
+                      <div>
+                        <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-2 block">Note de résolution (optionnelle)</label>
+                        <textarea
+                          rows={3}
+                          placeholder="Décrivez l'intervention réalisée..."
+                          value={resolutionNote}
+                          onChange={e => setResolutionNote(e.target.value)}
+                          className="w-full p-4 border-2 border-border rounded-2xl text-sm font-medium focus:border-primary outline-none resize-none leading-relaxed"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-2 block">Durée d'intervention (minutes)</label>
+                        <input
+                          type="number"
+                          min={1}
+                          placeholder="Ex : 45"
+                          value={resolutionDuration}
+                          onChange={e => setResolutionDuration(e.target.value === '' ? '' : Number(e.target.value))}
+                          className="w-full p-4 border-2 border-border rounded-2xl text-sm font-medium focus:border-primary outline-none"
+                        />
+                      </div>
                     </div>
                   )}
                 </div>
