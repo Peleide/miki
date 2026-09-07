@@ -343,6 +343,22 @@ export const ManagementPanel: React.FC<ManagementPanelProps> = ({ user }) => {
         return m > 0 ? `${h}h${String(m).padStart(2, '0')}` : `${h}h00`;
       };
 
+      // Calcul durée TAKE→RETURN par équipement (tri chrono)
+      const lastTakeByEq = new Map<string, string>();
+      const usageDurByLogId = new Map<string, string>();
+      const chronological = [...filtered].sort((a: any, b: any) =>
+        new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+      );
+      for (const l of chronological) {
+        if (l.action === 'TAKE') {
+          lastTakeByEq.set(l.equipmentId, l.timestamp);
+        } else if ((l.action === 'RETURN' || l.action === 'FORCE_RETURN') && lastTakeByEq.has(l.equipmentId)) {
+          const mins = Math.round((new Date(l.timestamp).getTime() - new Date(lastTakeByEq.get(l.equipmentId)!).getTime()) / 60000);
+          if (mins > 0) usageDurByLogId.set(l.id, formatDur(mins));
+          lastTakeByEq.delete(l.equipmentId);
+        }
+      }
+
       const headers = ['Date', 'Heure', 'Action', 'N° Référence interne', 'Désignation', 'Typologie', 'Local de stockage', 'Chantier', 'Technicien / Agent', 'A posteriori', 'Heure déclarée', 'Durée', 'Note'];
       const rows = filtered.map((l: any) => {
         const eq = eqMap.get(l.equipmentId);
@@ -353,7 +369,9 @@ export const ManagementPanel: React.FC<ManagementPanelProps> = ({ user }) => {
         const declaredStr = l.isAPosteriori && l.declaredAt
           ? new Date(l.declaredAt).toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
           : '';
-        const durationStr = l.durationMinutes != null ? formatDur(l.durationMinutes) : '';
+        const durationStr = l.durationMinutes != null
+          ? formatDur(l.durationMinutes)
+          : usageDurByLogId.get(l.id) || '';
         return [
           dateStr, timeStr,
           l.action,
