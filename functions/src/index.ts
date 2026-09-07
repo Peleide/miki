@@ -105,6 +105,11 @@ async function createAdminNotification(tenantId: string, title: string, message:
     if (count > 0) await batch.commit();
 }
 
+async function createUserNotification(userId: string, tenantId: string, title: string, message: string, type: string) {
+    const notifRef = db.collection("users").doc(userId).collection("notifications").doc();
+    await notifRef.set({ id: notifRef.id, tenantId, userId, title, message, type, read: false, timestamp: new Date().toISOString() });
+}
+
 async function writeAuditLog(params: {
   action: string;
   actorId: string;
@@ -1088,6 +1093,14 @@ export const manageSignalement = functions
       if (snap.data()?.status === "NEW") updates.status = "IN_PROGRESS";
       await ref.update(updates);
       writeAuditLog({ action: "SIGNALEMENT_UPDATED", actorId: context.auth.uid, actorName, tenantId, targetId: payload.id, targetName: snap.data()?.title, details: { action: "reply" } }).catch(console.error);
+      const sigData = snap.data();
+      const preview = (payload.message || '').slice(0, 80);
+      const isManagerActor = actorRole === "TECHNICIAN" || actorRole === "ADMIN";
+      if (isManagerActor && sigData?.createdBy && sigData.createdBy !== context.auth.uid) {
+        createUserNotification(sigData.createdBy, tenantId, "Réponse à votre signalement", `${actorName} a répondu : "${preview}"`, "INFO").catch(console.error);
+      } else if (!isManagerActor) {
+        createManagerNotification(tenantId, "Réponse client sur signalement", `${actorName} a répondu au signalement "${sigData?.title}"`, "INFO").catch(console.error);
+      }
       return { success: true };
     }
 
@@ -1110,6 +1123,10 @@ export const manageSignalement = functions
         closedByName: actorName,
       });
       writeAuditLog({ action: "SIGNALEMENT_CLOSED", actorId: context.auth.uid, actorName, tenantId, targetId: payload.id, targetName: snap.data()?.title }).catch(console.error);
+      const closedSigData = snap.data();
+      if (closedSigData?.createdBy && closedSigData.createdBy !== context.auth.uid) {
+        createUserNotification(closedSigData.createdBy, tenantId, "Signalement clôturé", `Votre signalement "${closedSigData.title}" a été clôturé par ${actorName}.`, "INFO").catch(console.error);
+      }
       return { success: true };
     }
 

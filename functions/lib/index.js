@@ -113,6 +113,10 @@ async function createAdminNotification(tenantId, title, message, type) {
     if (count > 0)
         await batch.commit();
 }
+async function createUserNotification(userId, tenantId, title, message, type) {
+    const notifRef = db.collection("users").doc(userId).collection("notifications").doc();
+    await notifRef.set({ id: notifRef.id, tenantId, userId, title, message, type, read: false, timestamp: new Date().toISOString() });
+}
 async function writeAuditLog(params) {
     var _a;
     const category = params.action.startsWith('USER') ? 'USER' : 'STRUCTURE';
@@ -160,22 +164,29 @@ exports.processEquipmentScan = functions
         if (!userData)
             throw new functions.https.HttpsError("not-found", "Utilisateur introuvable.");
         const now = firestore_1.Timestamp.now();
+        const serverNow = new Date().toISOString();
         const logRecord = {
             tenantId,
             equipmentId,
             userId,
-            timestamp: new Date().toISOString(),
+            timestamp: (details === null || details === void 0 ? void 0 : details.declaredAt) || serverNow,
             action,
             isOffline: false,
-            isManual: false,
+            isManual: !!(details === null || details === void 0 ? void 0 : details.declaredAt),
             source: "SCAN",
             userNote: details === null || details === void 0 ? void 0 : details.userNote,
             agentNameSnapshot: `${userData.firstName} ${userData.lastName}`,
             equipmentNameSnapshot: (eqData === null || eqData === void 0 ? void 0 : eqData.name) || "Inconnu",
             serverTimestamp: now,
         };
+        if (details === null || details === void 0 ? void 0 : details.declaredAt) {
+            logRecord.isAPosteriori = true;
+            logRecord.declaredAt = details.declaredAt;
+        }
         if (details === null || details === void 0 ? void 0 : details.siteId)
             logRecord.siteId = details.siteId;
+        if ((details === null || details === void 0 ? void 0 : details.durationMinutes) != null)
+            logRecord.durationMinutes = details.durationMinutes;
         let newStatus = (eqData === null || eqData === void 0 ? void 0 : eqData.status) || "AVAILABLE";
         let userUpdates = {};
         let eqUpdates = { lastUsageTimestamp: new Date().toISOString() };
@@ -926,6 +937,15 @@ exports.manageSignalement = functions
             updates.status = "IN_PROGRESS";
         await ref.update(updates);
         writeAuditLog({ action: "SIGNALEMENT_UPDATED", actorId: context.auth.uid, actorName, tenantId, targetId: payload.id, targetName: (_c = snap.data()) === null || _c === void 0 ? void 0 : _c.title, details: { action: "reply" } }).catch(console.error);
+        const sigData = snap.data();
+        const preview = (payload.message || '').slice(0, 80);
+        const isManagerActor = actorRole === "TECHNICIAN" || actorRole === "ADMIN";
+        if (isManagerActor && (sigData === null || sigData === void 0 ? void 0 : sigData.createdBy) && sigData.createdBy !== context.auth.uid) {
+            createUserNotification(sigData.createdBy, tenantId, "Réponse à votre signalement", `${actorName} a répondu : "${preview}"`, "INFO").catch(console.error);
+        }
+        else if (!isManagerActor) {
+            createManagerNotification(tenantId, "Réponse client sur signalement", `${actorName} a répondu au signalement "${sigData === null || sigData === void 0 ? void 0 : sigData.title}"`, "INFO").catch(console.error);
+        }
         return { success: true };
     }
     if (action === "UPDATE_STATUS") {
@@ -948,6 +968,10 @@ exports.manageSignalement = functions
             closedByName: actorName,
         });
         writeAuditLog({ action: "SIGNALEMENT_CLOSED", actorId: context.auth.uid, actorName, tenantId, targetId: payload.id, targetName: (_d = snap.data()) === null || _d === void 0 ? void 0 : _d.title }).catch(console.error);
+        const closedSigData = snap.data();
+        if ((closedSigData === null || closedSigData === void 0 ? void 0 : closedSigData.createdBy) && closedSigData.createdBy !== context.auth.uid) {
+            createUserNotification(closedSigData.createdBy, tenantId, "Signalement clôturé", `Votre signalement "${closedSigData.title}" a été clôturé par ${actorName}.`, "INFO").catch(console.error);
+        }
         return { success: true };
     }
     if (action === "ARCHIVE") {
