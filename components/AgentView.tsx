@@ -33,6 +33,7 @@ export const AgentView: React.FC<AgentViewProps> = ({ user, isOnline, onModeChan
   const [takeQuantity, setTakeQuantity] = useState(1);
   const [isAPosteriori, setIsAPosteriori] = useState(false);
   const [aposterioriDate, setAposterioriDate] = useState('');
+  const [anomalyNote, setAnomalyNote] = useState('');
 
   const isSelectedEqRef = useRef<boolean>(false);
   const lastScanTimeRef = useRef<number>(0);
@@ -140,6 +141,7 @@ export const AgentView: React.FC<AgentViewProps> = ({ user, isOnline, onModeChan
     setTakeQuantity(1);
     setIsAPosteriori(false);
     setAposterioriDate('');
+    setAnomalyNote('');
   };
 
   const [checklists, setChecklists] = useState<any[]>([]);
@@ -199,6 +201,7 @@ export const AgentView: React.FC<AgentViewProps> = ({ user, isOnline, onModeChan
           quantity: selectedEq.isBatch ? takeQuantity : 1,
           siteId: action === 'TAKE' ? selectedSiteId : undefined,
           ...(isAPosteriori && aposterioriDate ? { declaredAt: new Date(aposterioriDate).toISOString() } : {}),
+          ...(anomalyNote.trim() ? { userNote: anomalyNote.trim() } : {}),
       });
 
       if (action === 'TAKE' && activeChecklist) {
@@ -655,6 +658,18 @@ export const AgentView: React.FC<AgentViewProps> = ({ user, isOnline, onModeChan
                           <p className="text-[9px] text-amber-500 font-bold mt-1 ml-1">L'heure de saisie réelle sera également enregistrée.</p>
                         </div>
                       )}
+                    </div>
+
+                    {/* Anomalie constatée */}
+                    <div className="mb-4">
+                      <label className="text-[9px] font-black uppercase tracking-widest text-gray-400 block mb-1.5 ml-1">Anomalie constatée (optionnel)</label>
+                      <input
+                        type="text"
+                        placeholder="Ex : bruit anormal, fuite, rayure…"
+                        value={anomalyNote}
+                        onChange={e => setAnomalyNote(e.target.value)}
+                        className="w-full p-4 border border-border rounded-2xl text-sm font-medium outline-none focus:border-danger/50 bg-white placeholder:text-gray-300"
+                      />
                     </div>
 
                     <div className="space-y-4">
