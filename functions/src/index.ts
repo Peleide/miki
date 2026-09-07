@@ -1107,8 +1107,15 @@ export const manageSignalement = functions
     if (action === "UPDATE_STATUS") {
       if (!canManage) throw new functions.https.HttpsError("permission-denied", "Droits insuffisants.");
       const ref = coll.doc(payload.id);
+      const statusSnap = await ref.get();
       await ref.update({ status: payload.status });
       writeAuditLog({ action: "SIGNALEMENT_UPDATED", actorId: context.auth.uid, actorName, tenantId, targetId: payload.id, details: { status: payload.status } }).catch(console.error);
+      if (payload.status === "RESOLVED") {
+        const statusSigData = statusSnap.data();
+        if (statusSigData?.createdBy && statusSigData.createdBy !== context.auth.uid) {
+          createUserNotification(statusSigData.createdBy, tenantId, "Signalement résolu", `Votre signalement "${statusSigData.title}" a été marqué comme résolu par ${actorName}.`, "INFO").catch(console.error);
+        }
+      }
       return { success: true };
     }
 
