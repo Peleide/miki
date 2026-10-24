@@ -1191,3 +1191,71 @@ export const nukePlatform = functions
   .https.onCall(async (data, context) => {
     return { success: false, message: "Disabled for safety." };
   });
+// ─── GMAO (branche CSP) ─────────────────────────────────────────────────────
+import { handleGmaoAction, runPreventiveScan, GmaoError, Ctx, Effect } from "./gmao/core";
+import { firestoreStore } from "./gmao/firestoreStore";
+import { ROLE_FROM_MIKI } from "./gmao/model";
+
+async function applyGmaoEffects(tenantId: string, actorId: string, actorName: string, effects: Effect[]) {
+  for (const e of effects) {
+    try {
+      if (e.type === "notifyManagers") await createManagerNotification(tenantId, e.title, e.message, e.level);
+      else if (e.type === "notifyUser") await createUserNotification(e.userId, tenantId, e.title, e.message, e.level);
+      else if (e.type === "audit") await writeAuditLog({ action: e.action, actorId, actorName, tenantId, targetId: e.targetId, targetName: e.targetName, details: e.details });
+    } catch (err) {
+      console.error("[GMAO] effet non appliqué", e.type, err);
+    }
+  }
+}
+
+export const gmaoAction = functions
+  .region("australia-southeast1")
+  .https.onCall(async (data, context) => {
+    if (!context.auth) throw new functions.https.HttpsError("unauthenticated", "Connexion requise.");
+    const { tenantId, action, payload } = data || {};
+    if (!tenantId || tenantId === "platform") throw new functions.https.HttpsError("invalid-argument", "Organisation invalide.");
+    const { user, isGlobalAdmin } = await verifyAccess(context.auth.uid, tenantId, ["ADMIN", "TECHNICIAN", "AGENT", "CLIENT"]);
+    const mikiRole = isGlobalAdmin ? "ADMIN" : (user.tenantsAccess?.[tenantId] || user.role);
+    const actorName = `${user.firstName || ""} ${user.lastName || ""}`.trim() || user.email;
+    const ctx: Ctx = {
+      store: firestoreStore(db, tenantId),
+      actor: { id: context.auth.uid, name: actorName, role: ROLE_FROM_MIKI[mikiRole] || "DEMANDEUR" },
+      now: new Date(),
+      effects: [],
+    };
+    try {
+      const result = await handleGmaoAction(ctx, action, payload);
+      await applyGmaoEffects(tenantId, context.auth.uid, actorName, ctx.effects);
+      return result ?? { success: true };
+    } catch (err: any) {
+      if (err instanceof GmaoError) throw new functions.https.HttpsError(err.code, err.message);
+      console.error("[GMAO]", action, err);
+      throw new functions.https.HttpsError("internal", "Erreur serveur GMAO.");
+    }
+  });
+
+// Génère chaque matin les BT préventifs arrivés à échéance (calendrier ou compteur).
+export const gmaoDailyPreventiveScan = functions
+  .region("australia-southeast1")
+  .pubsub.schedule("0 5 * * *")
+  .timeZone("Pacific/Noumea")
+  .onRun(async () => {
+    const tenants = await db.collection("tenants").get();
+    for (const t of tenants.docs) {
+      const plans = await t.ref.collection("gmaoPmPlans").limit(1).get();
+      if (plans.empty) continue;
+      const ctx: Ctx = {
+        store: firestoreStore(db, t.id),
+        actor: { id: "system", name: "Planification automatique", role: "RESPONSABLE" },
+        now: new Date(),
+        effects: [],
+      };
+      try {
+        await runPreventiveScan(ctx);
+        await applyGmaoEffects(t.id, "system", "Planification automatique", ctx.effects);
+      } catch (err) {
+        console.error(`[GMAO] scan préventif échoué pour ${t.id}`, err);
+      }
+    }
+    return null;
+  });

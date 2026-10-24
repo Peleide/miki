@@ -1,17 +1,6 @@
 "use strict";
-var __rest = (this && this.__rest) || function (s, e) {
-    var t = {};
-    for (var p in s) if (Object.prototype.hasOwnProperty.call(s, p) && e.indexOf(p) < 0)
-        t[p] = s[p];
-    if (s != null && typeof Object.getOwnPropertySymbols === "function")
-        for (var i = 0, p = Object.getOwnPropertySymbols(s); i < p.length; i++) {
-            if (e.indexOf(p[i]) < 0 && Object.prototype.propertyIsEnumerable.call(s, p[i]))
-                t[p[i]] = s[p[i]];
-        }
-    return t;
-};
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.nukePlatform = exports.repairAdminProfile = exports.seedSystem = exports.manageSignalement = exports.manageVisitSession = exports.manageCdilUnit = exports.manageEquipmentType = exports.submitChecklistAnswers = exports.manageChecklist = exports.submitReport = exports.manageSite = exports.manageStructure = exports.manageEquipment = exports.manageUser = exports.deleteEquipmentLog = exports.processEquipmentScan = void 0;
+exports.gmaoDailyPreventiveScan = exports.gmaoAction = exports.nukePlatform = exports.repairAdminProfile = exports.seedSystem = exports.manageSignalement = exports.manageVisitSession = exports.manageCdilUnit = exports.manageEquipmentType = exports.submitChecklistAnswers = exports.manageChecklist = exports.submitReport = exports.manageSite = exports.manageStructure = exports.manageEquipment = exports.manageUser = exports.deleteEquipmentLog = exports.processEquipmentScan = void 0;
 const functions = require("firebase-functions/v1");
 const admin = require("firebase-admin");
 const firestore_1 = require("firebase-admin/firestore");
@@ -24,20 +13,19 @@ const generateSecureQR = () => {
     return `MIKI_${crypto.randomBytes(12).toString("hex").toUpperCase()}`;
 };
 async function verifyAccess(uid, tenantId, allowedRoles) {
-    var _a, _b, _c;
     const userDoc = await db.collection("users").doc(uid).get();
     const userData = userDoc.data();
     if (!userData || userData.isDisabled || userData.isArchived) {
         throw new functions.https.HttpsError("permission-denied", "Compte inactif ou inconnu.");
     }
-    const isGlobalAdmin = ((_a = userData.tenantsAccess) === null || _a === void 0 ? void 0 : _a["platform"]) === "ADMIN" ||
+    const isGlobalAdmin = userData.tenantsAccess?.["platform"] === "ADMIN" ||
         (Array.isArray(userData.accessibleTenantIds) && userData.accessibleTenantIds.includes("platform"));
     if (isGlobalAdmin)
         return { user: userData, isGlobalAdmin: true };
     if (tenantId === "platform")
         return { user: userData, isGlobalAdmin: false, isSelf: true };
     const normalizedAllowed = allowedRoles.map((r) => r.toUpperCase());
-    const tenantRole = (_b = userData.tenantsAccess) === null || _b === void 0 ? void 0 : _b[tenantId];
+    const tenantRole = userData.tenantsAccess?.[tenantId];
     if (typeof tenantRole === "string" && normalizedAllowed.includes(tenantRole.toUpperCase())) {
         return { user: userData, isGlobalAdmin: false };
     }
@@ -45,7 +33,7 @@ async function verifyAccess(uid, tenantId, allowedRoles) {
     if (Array.isArray(userData.accessibleTenantIds) && userData.accessibleTenantIds.includes(tenantId)) {
         const legacyRole = typeof userData.role === "string" ? userData.role.toUpperCase() : null;
         if (legacyRole && normalizedAllowed.includes(legacyRole)) {
-            if (!((_c = userData.tenantsAccess) === null || _c === void 0 ? void 0 : _c[tenantId])) {
+            if (!userData.tenantsAccess?.[tenantId]) {
                 await db.collection("users").doc(uid).set({ tenantsAccess: { [tenantId]: legacyRole } }, { merge: true });
             }
             return { user: userData, isGlobalAdmin: false };
@@ -71,10 +59,9 @@ async function createManagerNotification(tenantId, title, message, type) {
     const batch = db.batch();
     let count = 0;
     allDocs.forEach(doc => {
-        var _a, _b;
         const data = doc.data();
-        const role = ((_a = data.tenantsAccess) === null || _a === void 0 ? void 0 : _a[tenantId]) || data.role;
-        const isPlatformAdmin = ((_b = data.tenantsAccess) === null || _b === void 0 ? void 0 : _b['platform']) === 'ADMIN';
+        const role = data.tenantsAccess?.[tenantId] || data.role;
+        const isPlatformAdmin = data.tenantsAccess?.['platform'] === 'ADMIN';
         if (role === 'ADMIN' || role === 'TECHNICIAN' || isPlatformAdmin) {
             const notifRef = db.collection("users").doc(doc.id).collection("notifications").doc();
             batch.set(notifRef, {
@@ -98,9 +85,8 @@ async function createAdminNotification(tenantId, title, message, type) {
     const batch = db.batch();
     let count = 0;
     platformSnap.docs.forEach(doc => {
-        var _a;
         const data = doc.data();
-        if (((_a = data.tenantsAccess) === null || _a === void 0 ? void 0 : _a["platform"]) === "ADMIN") {
+        if (data.tenantsAccess?.["platform"] === "ADMIN") {
             const notifRef = db.collection("users").doc(doc.id).collection("notifications").doc();
             batch.set(notifRef, {
                 id: notifRef.id, tenantId, userId: doc.id,
@@ -118,15 +104,14 @@ async function createUserNotification(userId, tenantId, title, message, type) {
     await notifRef.set({ id: notifRef.id, tenantId, userId, title, message, type, read: false, timestamp: new Date().toISOString() });
 }
 async function writeAuditLog(params) {
-    var _a;
     const category = params.action.startsWith('USER') ? 'USER' : 'STRUCTURE';
     let tenantName = params.tenantId;
     try {
         const tenantSnap = await db.collection("tenants").doc(params.tenantId).get();
         if (tenantSnap.exists)
-            tenantName = ((_a = tenantSnap.data()) === null || _a === void 0 ? void 0 : _a.name) || params.tenantId;
+            tenantName = tenantSnap.data()?.name || params.tenantId;
     }
-    catch ( /* use tenantId as fallback */_b) { /* use tenantId as fallback */ }
+    catch { /* use tenantId as fallback */ }
     const detailsStr = params.details
         ? Object.entries(params.details)
             .filter(([, v]) => v !== undefined)
@@ -134,7 +119,20 @@ async function writeAuditLog(params) {
             .join(' · ')
         : undefined;
     const ref = db.collection("audit_logs").doc();
-    return ref.set(Object.assign(Object.assign(Object.assign({ id: ref.id, timestamp: new Date().toISOString(), serverTimestamp: firestore_1.Timestamp.now(), userId: params.actorId, userName: params.actorName, action: params.action, category, tenantId: params.tenantId, tenantName }, (params.targetId ? { targetId: params.targetId } : {})), (params.targetName ? { targetName: params.targetName } : {})), (detailsStr ? { details: detailsStr } : {})));
+    return ref.set({
+        id: ref.id,
+        timestamp: new Date().toISOString(),
+        serverTimestamp: firestore_1.Timestamp.now(),
+        userId: params.actorId,
+        userName: params.actorName,
+        action: params.action,
+        category,
+        tenantId: params.tenantId,
+        tenantName,
+        ...(params.targetId ? { targetId: params.targetId } : {}),
+        ...(params.targetName ? { targetName: params.targetName } : {}),
+        ...(detailsStr ? { details: detailsStr } : {}),
+    });
 }
 // --- LOGIQUE METIER MIKI (EQUIPEMENT) ---
 exports.processEquipmentScan = functions
@@ -153,11 +151,10 @@ exports.processEquipmentScan = functions
         throw new functions.https.HttpsError("not-found", "Équipement introuvable.");
     }
     const eqData = equipmentSnap.data();
-    if ((details === null || details === void 0 ? void 0 : details.validationQr) && (eqData === null || eqData === void 0 ? void 0 : eqData.qrCode) && eqData.qrCode !== details.validationQr) {
+    if (details?.validationQr && eqData?.qrCode && eqData.qrCode !== details.validationQr) {
         throw new functions.https.HttpsError("permission-denied", "Le QR Code scanné ne correspond pas à l'équipement.");
     }
     return db.runTransaction(async (transaction) => {
-        var _a, _b, _c;
         const userRef = db.collection("users").doc(userId);
         const userDoc = await transaction.get(userRef);
         const userData = userDoc.data();
@@ -169,30 +166,30 @@ exports.processEquipmentScan = functions
             tenantId,
             equipmentId,
             userId,
-            timestamp: (details === null || details === void 0 ? void 0 : details.declaredAt) || serverNow,
+            timestamp: details?.declaredAt || serverNow,
             action,
             isOffline: false,
-            isManual: !!(details === null || details === void 0 ? void 0 : details.declaredAt),
+            isManual: !!details?.declaredAt,
             source: "SCAN",
-            userNote: details === null || details === void 0 ? void 0 : details.userNote,
+            userNote: details?.userNote,
             agentNameSnapshot: `${userData.firstName} ${userData.lastName}`,
-            equipmentNameSnapshot: (eqData === null || eqData === void 0 ? void 0 : eqData.name) || "Inconnu",
+            equipmentNameSnapshot: eqData?.name || "Inconnu",
             serverTimestamp: now,
         };
-        if (details === null || details === void 0 ? void 0 : details.declaredAt) {
+        if (details?.declaredAt) {
             logRecord.isAPosteriori = true;
             logRecord.declaredAt = details.declaredAt;
         }
-        if (details === null || details === void 0 ? void 0 : details.siteId)
+        if (details?.siteId)
             logRecord.siteId = details.siteId;
-        if ((details === null || details === void 0 ? void 0 : details.durationMinutes) != null)
+        if (details?.durationMinutes != null)
             logRecord.durationMinutes = details.durationMinutes;
-        let newStatus = (eqData === null || eqData === void 0 ? void 0 : eqData.status) || "AVAILABLE";
+        let newStatus = eqData?.status || "AVAILABLE";
         let userUpdates = {};
         let eqUpdates = { lastUsageTimestamp: new Date().toISOString() };
         let childrenRefs = [];
         let childrenSnaps = [];
-        if ((eqData === null || eqData === void 0 ? void 0 : eqData.isKit) && Array.isArray(eqData.childEquipmentIds)) {
+        if (eqData?.isKit && Array.isArray(eqData.childEquipmentIds)) {
             childrenRefs = eqData.childEquipmentIds.map((id) => db.collection("tenants").doc(tenantId).collection("equipments").doc(id));
             if (childrenRefs.length > 0) {
                 childrenSnaps = await transaction.getAll(...childrenRefs);
@@ -203,8 +200,8 @@ exports.processEquipmentScan = functions
             case 'TAKE':
                 if (newStatus === "MAINTENANCE")
                     throw new functions.https.HttpsError("failed-precondition", "Équipement en maintenance.");
-                if (eqData === null || eqData === void 0 ? void 0 : eqData.isBatch) {
-                    const qty = (details === null || details === void 0 ? void 0 : details.quantity) || 1;
+                if (eqData?.isBatch) {
+                    const qty = details?.quantity || 1;
                     if (qty > (eqData.batchQuantity || 0))
                         throw new functions.https.HttpsError("out-of-range", "Stock insuffisant.");
                     eqUpdates.batchQuantity = firestore_1.FieldValue.increment(-qty);
@@ -215,16 +212,16 @@ exports.processEquipmentScan = functions
                         throw new functions.https.HttpsError("failed-precondition", "Équipement déjà emprunté.");
                     newStatus = "IN_USE";
                     userUpdates.activeEquipmentId = equipmentId;
-                    if (details === null || details === void 0 ? void 0 : details.siteId)
+                    if (details?.siteId)
                         eqUpdates.currentSiteId = details.siteId;
                 }
                 eqUpdates.usageCount = firestore_1.FieldValue.increment(1);
                 break;
             case 'RETURN':
-                if (eqData === null || eqData === void 0 ? void 0 : eqData.isBatch) {
-                    const qty = (details === null || details === void 0 ? void 0 : details.quantity) || 1;
-                    const batchTotal = (_b = (_a = eqData.batchTotal) !== null && _a !== void 0 ? _a : eqData.batchQuantity) !== null && _b !== void 0 ? _b : 0;
-                    const currentQty = (_c = eqData.batchQuantity) !== null && _c !== void 0 ? _c : 0;
+                if (eqData?.isBatch) {
+                    const qty = details?.quantity || 1;
+                    const batchTotal = eqData.batchTotal ?? eqData.batchQuantity ?? 0;
+                    const currentQty = eqData.batchQuantity ?? 0;
                     if (currentQty + qty > batchTotal) {
                         throw new functions.https.HttpsError("out-of-range", `Impossible de restituer ${qty} unité(s) : le stock total est de ${batchTotal}.`);
                     }
@@ -238,14 +235,14 @@ exports.processEquipmentScan = functions
                 }
                 // Maintenance Prédictive Check
                 let triggersMaintenance = false;
-                let expectedUsageCount = ((eqData === null || eqData === void 0 ? void 0 : eqData.usageCount) || 0) + 1;
-                if ((eqData === null || eqData === void 0 ? void 0 : eqData.usageCountBeforeMaintenance) && expectedUsageCount >= eqData.usageCountBeforeMaintenance) {
+                let expectedUsageCount = (eqData?.usageCount || 0) + 1;
+                if (eqData?.usageCountBeforeMaintenance && expectedUsageCount >= eqData.usageCountBeforeMaintenance) {
                     triggersMaintenance = true;
                 }
-                if ((eqData === null || eqData === void 0 ? void 0 : eqData.nextMaintenanceDate) && new Date(eqData.nextMaintenanceDate) <= new Date()) {
+                if (eqData?.nextMaintenanceDate && new Date(eqData.nextMaintenanceDate) <= new Date()) {
                     triggersMaintenance = true;
                 }
-                if (triggersMaintenance && !(eqData === null || eqData === void 0 ? void 0 : eqData.isBatch)) {
+                if (triggersMaintenance && !eqData?.isBatch) {
                     newStatus = "MAINTENANCE";
                     const reportRef = db.collection("tenants").doc(tenantId).collection("incidentReports").doc();
                     createdMaintenanceReport = {
@@ -254,7 +251,7 @@ exports.processEquipmentScan = functions
                         equipmentId,
                         userId: "SYSTEM",
                         userNameSnapshot: "Système de Maintenance Prédictive",
-                        equipmentNameSnapshot: (eqData === null || eqData === void 0 ? void 0 : eqData.name) || "Inconnu",
+                        equipmentNameSnapshot: eqData?.name || "Inconnu",
                         message: "Maintenance préventive requise (seuil d'usure ou date limite atteinte).",
                         tags: ["Maintenance Préventive", "Automatique"],
                         status: "OPEN",
@@ -274,7 +271,7 @@ exports.processEquipmentScan = functions
                 // Reset maintenance intervals
                 eqUpdates.usageCount = 0;
                 eqUpdates.lastMaintenanceDate = new Date().toISOString();
-                if (eqData === null || eqData === void 0 ? void 0 : eqData.maintenanceIntervalDays) {
+                if (eqData?.maintenanceIntervalDays) {
                     const nextDate = new Date();
                     nextDate.setDate(nextDate.getDate() + eqData.maintenanceIntervalDays);
                     eqUpdates.nextMaintenanceDate = nextDate.toISOString();
@@ -291,11 +288,11 @@ exports.processEquipmentScan = functions
         if (Object.keys(userUpdates).length > 0)
             transaction.update(userRef, userUpdates);
         // Update Children if Kit
-        if ((eqData === null || eqData === void 0 ? void 0 : eqData.isKit) && childrenSnaps.length > 0) {
+        if (eqData?.isKit && childrenSnaps.length > 0) {
             childrenSnaps.forEach(snap => {
                 if (snap.exists) {
                     let childUpdates = { status: action === 'TAKE' ? 'IN_USE' : 'AVAILABLE' };
-                    if (action === 'TAKE' && (details === null || details === void 0 ? void 0 : details.siteId))
+                    if (action === 'TAKE' && details?.siteId)
                         childUpdates.currentSiteId = details.siteId;
                     if (action === 'RETURN')
                         childUpdates.currentSiteId = firestore_1.FieldValue.delete();
@@ -307,7 +304,7 @@ exports.processEquipmentScan = functions
     }).then(async (result) => {
         // Post-transaction tasks
         if (result.createdMaintenanceReport) {
-            await createManagerNotification(tenantId, `Maintenance Préventive Requise`, `L'équipement ${eqData === null || eqData === void 0 ? void 0 : eqData.name} a atteint son seuil de révision.`, "WARNING");
+            await createManagerNotification(tenantId, `Maintenance Préventive Requise`, `L'équipement ${eqData?.name} a atteint son seuil de révision.`, "WARNING");
         }
         return result;
     });
@@ -327,7 +324,6 @@ exports.deleteEquipmentLog = functions
 exports.manageUser = functions
     .region("australia-southeast1")
     .https.onCall(async (data, context) => {
-    var _a, _b, _c;
     if (!context.auth)
         throw new functions.https.HttpsError("unauthenticated", "Auth required.");
     const { action, tenantId, userData, targetUserId } = data;
@@ -342,7 +338,7 @@ exports.manageUser = functions
     const actorName = `${actorData.firstName} ${actorData.lastName}`;
     if (action === "CREATE") {
         const tempPassword = Math.random().toString(36).slice(-8);
-        const normalizedRole = typeof (userData === null || userData === void 0 ? void 0 : userData.role) === "string" ? userData.role.toUpperCase() : null;
+        const normalizedRole = typeof userData?.role === "string" ? userData.role.toUpperCase() : null;
         if (!normalizedRole)
             throw new functions.https.HttpsError("invalid-argument", "Rôle requis.");
         const created = await auth.createUser({
@@ -350,7 +346,16 @@ exports.manageUser = functions
             password: tempPassword,
             displayName: `${userData.firstName} ${userData.lastName}`,
         });
-        await db.collection("users").doc(created.uid).set(Object.assign(Object.assign({}, userData), { role: normalizedRole, id: created.uid, isArchived: false, isDisabled: false, mustChangePassword: true, tenantsAccess: { [tenantId]: normalizedRole }, accessibleTenantIds: [tenantId] }), { merge: true });
+        await db.collection("users").doc(created.uid).set({
+            ...userData,
+            role: normalizedRole,
+            id: created.uid,
+            isArchived: false,
+            isDisabled: false,
+            mustChangePassword: true,
+            tenantsAccess: { [tenantId]: normalizedRole },
+            accessibleTenantIds: [tenantId],
+        }, { merge: true });
         writeAuditLog({ action: 'USER_CREATED', actorId: context.auth.uid, actorName, tenantId, targetId: created.uid, targetName: `${userData.firstName} ${userData.lastName}`, details: { role: normalizedRole, email: userData.email } }).catch(console.error);
         return { uid: created.uid, password: tempPassword };
     }
@@ -360,7 +365,7 @@ exports.manageUser = functions
         if (!targetSnap.exists)
             throw new functions.https.HttpsError("not-found", "User not found");
         const targetData = targetSnap.data();
-        if (((_a = targetData === null || targetData === void 0 ? void 0 : targetData.tenantsAccess) === null || _a === void 0 ? void 0 : _a["platform"]) === "ADMIN" && !isGlobalAdmin) {
+        if (targetData?.tenantsAccess?.["platform"] === "ADMIN" && !isGlobalAdmin) {
             throw new functions.https.HttpsError("permission-denied", "Platform admin update denied.");
         }
         if (action === "UPDATE") {
@@ -370,7 +375,7 @@ exports.manageUser = functions
                 await auth.updateUser(targetUserId, { disabled: cleanData.isDisabled });
             }
             const auditAction = cleanData.isDisabled === true ? 'USER_DISABLED' : cleanData.isDisabled === false ? 'USER_ENABLED' : 'USER_UPDATED';
-            const targetName = `${targetData === null || targetData === void 0 ? void 0 : targetData.firstName} ${targetData === null || targetData === void 0 ? void 0 : targetData.lastName}`;
+            const targetName = `${targetData?.firstName} ${targetData?.lastName}`;
             writeAuditLog({ action: auditAction, actorId: context.auth.uid, actorName, tenantId, targetId: targetUserId, targetName, details: cleanData }).catch(console.error);
             return { success: true };
         }
@@ -378,19 +383,19 @@ exports.manageUser = functions
             const tempPassword = Math.random().toString(36).slice(-8) + Math.floor(Math.random() * 10);
             await auth.updateUser(targetUserId, { password: tempPassword });
             await targetRef.update({ mustChangePassword: true });
-            writeAuditLog({ action: 'USER_PASSWORD_RESET', actorId: context.auth.uid, actorName, tenantId, targetId: targetUserId, targetName: `${targetData === null || targetData === void 0 ? void 0 : targetData.firstName} ${targetData === null || targetData === void 0 ? void 0 : targetData.lastName}` }).catch(console.error);
+            writeAuditLog({ action: 'USER_PASSWORD_RESET', actorId: context.auth.uid, actorName, tenantId, targetId: targetUserId, targetName: `${targetData?.firstName} ${targetData?.lastName}` }).catch(console.error);
             return { success: true, tempPassword };
         }
     }
     if (action === "ADD_TENANT_ACCESS") {
-        const emailToFind = ((userData === null || userData === void 0 ? void 0 : userData.email) || "").toLowerCase().trim();
+        const emailToFind = (userData?.email || "").toLowerCase().trim();
         if (!emailToFind)
             throw new functions.https.HttpsError("invalid-argument", "Email requis.");
         let existingAuthUser;
         try {
             existingAuthUser = await auth.getUserByEmail(emailToFind);
         }
-        catch (_d) {
+        catch {
             throw new functions.https.HttpsError("not-found", "Aucun compte trouvé avec cet email.");
         }
         const targetRef = db.collection("users").doc(existingAuthUser.uid);
@@ -398,14 +403,14 @@ exports.manageUser = functions
         if (!targetSnap.exists)
             throw new functions.https.HttpsError("not-found", "Utilisateur introuvable en base.");
         const targetData = targetSnap.data();
-        if (((_b = targetData.tenantsAccess) === null || _b === void 0 ? void 0 : _b["platform"]) === "ADMIN") {
+        if (targetData.tenantsAccess?.["platform"] === "ADMIN") {
             throw new functions.https.HttpsError("permission-denied", "Opération non autorisée sur un administrateur plateforme.");
         }
-        const normalizedRole = ((userData === null || userData === void 0 ? void 0 : userData.role) || "TECHNICIAN").toUpperCase();
+        const normalizedRole = (userData?.role || "TECHNICIAN").toUpperCase();
         if (!["TECHNICIAN", "AGENT"].includes(normalizedRole)) {
             throw new functions.https.HttpsError("invalid-argument", "Seuls les rôles TECHNICIAN et AGENT peuvent être associés via cette action.");
         }
-        if ((_c = targetData.tenantsAccess) === null || _c === void 0 ? void 0 : _c[tenantId]) {
+        if (targetData.tenantsAccess?.[tenantId]) {
             throw new functions.https.HttpsError("already-exists", "Cet utilisateur a déjà accès à ce site.");
         }
         await targetRef.update({
@@ -437,7 +442,6 @@ exports.manageUser = functions
 exports.manageEquipment = functions
     .region("australia-southeast1")
     .https.onCall(async (data, context) => {
-    var _a, _b, _c, _d, _e, _f;
     if (!context.auth)
         throw new functions.https.HttpsError("unauthenticated", "Auth required.");
     const { action, tenantId, payload } = data;
@@ -447,7 +451,6 @@ exports.manageEquipment = functions
         const counterRef = db.collection("tenants").doc(tenantId).collection("counters").doc("equipmentTypeCounters");
         if (payload.categoryCode && payload.storageLocation) {
             const result = await db.runTransaction(async (tx) => {
-                var _a, _b;
                 const counterSnap = await tx.get(counterRef);
                 const counters = counterSnap.exists ? counterSnap.data() || {} : {};
                 const newCount = (counters[payload.categoryCode] || 0) + 1;
@@ -455,8 +458,19 @@ exports.manageEquipment = functions
                 const yyyymm = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`;
                 const name = `${payload.categoryCode}${String(newCount).padStart(2, '0')}_${yyyymm}_${payload.storageLocation}`;
                 const eqRef = db.collection("tenants").doc(tenantId).collection("equipments").doc();
-                tx.set(eqRef, Object.assign(Object.assign(Object.assign({}, payload), { id: eqRef.id, tenantId,
-                    name, type: payload.category || payload.categoryCode, qrCode: generateSecureQR(), status: payload.status || "AVAILABLE", usageCount: 0, isArchived: false, createdAt: new Date().toISOString() }), (payload.isBatch ? { batchTotal: (_b = (_a = payload.batchTotal) !== null && _a !== void 0 ? _a : payload.batchQuantity) !== null && _b !== void 0 ? _b : 0 } : {})));
+                tx.set(eqRef, {
+                    ...payload,
+                    id: eqRef.id,
+                    tenantId,
+                    name,
+                    type: payload.category || payload.categoryCode,
+                    qrCode: generateSecureQR(),
+                    status: payload.status || "AVAILABLE",
+                    usageCount: 0,
+                    isArchived: false,
+                    createdAt: new Date().toISOString(),
+                    ...(payload.isBatch ? { batchTotal: payload.batchTotal ?? payload.batchQuantity ?? 0 } : {}),
+                });
                 tx.set(counterRef, { [payload.categoryCode]: newCount }, { merge: true });
                 return { success: true, id: eqRef.id, name };
             });
@@ -464,7 +478,17 @@ exports.manageEquipment = functions
             return result;
         }
         const ref = db.collection("tenants").doc(tenantId).collection("equipments").doc();
-        await ref.set(Object.assign(Object.assign(Object.assign({}, payload), { id: ref.id, tenantId, qrCode: generateSecureQR(), status: payload.status || "AVAILABLE", usageCount: 0, isArchived: false, createdAt: new Date().toISOString() }), (payload.isBatch ? { batchTotal: (_b = (_a = payload.batchTotal) !== null && _a !== void 0 ? _a : payload.batchQuantity) !== null && _b !== void 0 ? _b : 0 } : {})));
+        await ref.set({
+            ...payload,
+            id: ref.id,
+            tenantId,
+            qrCode: generateSecureQR(),
+            status: payload.status || "AVAILABLE",
+            usageCount: 0,
+            isArchived: false,
+            createdAt: new Date().toISOString(),
+            ...(payload.isBatch ? { batchTotal: payload.batchTotal ?? payload.batchQuantity ?? 0 } : {}),
+        });
         writeAuditLog({ action: 'EQUIPMENT_CREATED', actorId: context.auth.uid, actorName, tenantId, targetId: ref.id, details: { category: payload.categoryCode, isBatch: payload.isBatch } }).catch(console.error);
         return { success: true, id: ref.id };
     }
@@ -472,7 +496,7 @@ exports.manageEquipment = functions
         const { items } = payload;
         const counterRef = db.collection("tenants").doc(tenantId).collection("counters").doc("equipmentTypeCounters");
         const firstItem = items[0];
-        if ((firstItem === null || firstItem === void 0 ? void 0 : firstItem.categoryCode) && (firstItem === null || firstItem === void 0 ? void 0 : firstItem.storageLocation)) {
+        if (firstItem?.categoryCode && firstItem?.storageLocation) {
             return await db.runTransaction(async (tx) => {
                 const counterSnap = await tx.get(counterRef);
                 const counters = counterSnap.exists ? counterSnap.data() || {} : {};
@@ -484,8 +508,18 @@ exports.manageEquipment = functions
                     count++;
                     const name = `${item.categoryCode}${String(count).padStart(2, '0')}_${yyyymm}_${item.storageLocation}`;
                     const eqRef = db.collection("tenants").doc(tenantId).collection("equipments").doc();
-                    tx.set(eqRef, Object.assign(Object.assign({}, item), { id: eqRef.id, tenantId,
-                        name, type: item.category || item.categoryCode, qrCode: generateSecureQR(), status: item.status || "AVAILABLE", usageCount: 0, isArchived: false, createdAt: new Date().toISOString() }));
+                    tx.set(eqRef, {
+                        ...item,
+                        id: eqRef.id,
+                        tenantId,
+                        name,
+                        type: item.category || item.categoryCode,
+                        qrCode: generateSecureQR(),
+                        status: item.status || "AVAILABLE",
+                        usageCount: 0,
+                        isArchived: false,
+                        createdAt: new Date().toISOString(),
+                    });
                     ids.push(eqRef.id);
                 }
                 tx.set(counterRef, { [firstItem.categoryCode]: count }, { merge: true });
@@ -496,14 +530,23 @@ exports.manageEquipment = functions
         const ids = [];
         for (const item of items) {
             const ref = db.collection("tenants").doc(tenantId).collection("equipments").doc();
-            batch.set(ref, Object.assign(Object.assign({}, item), { id: ref.id, tenantId, qrCode: generateSecureQR(), status: item.status || "AVAILABLE", usageCount: 0, isArchived: false, createdAt: new Date().toISOString() }));
+            batch.set(ref, {
+                ...item,
+                id: ref.id,
+                tenantId,
+                qrCode: generateSecureQR(),
+                status: item.status || "AVAILABLE",
+                usageCount: 0,
+                isArchived: false,
+                createdAt: new Date().toISOString(),
+            });
             ids.push(ref.id);
         }
         await batch.commit();
         return { success: true, ids };
     }
     if (action === "UPDATE") {
-        const _g = payload.updates, { qrCode, id } = _g, safeUpdates = __rest(_g, ["qrCode", "id"]);
+        const { qrCode, id, ...safeUpdates } = payload.updates;
         const eqRef = db.collection("tenants").doc(tenantId).collection("equipments").doc(payload.id);
         await eqRef.update(safeUpdates);
         writeAuditLog({ action: 'EQUIPMENT_UPDATED', actorId: context.auth.uid, actorName, tenantId, targetId: payload.id, details: safeUpdates }).catch(console.error);
@@ -525,8 +568,8 @@ exports.manageEquipment = functions
             archiveRequestedBy: context.auth.uid,
             archiveRequestedByName: actorName,
         });
-        writeAuditLog({ action: 'EQUIPMENT_ARCHIVE_REQUESTED', actorId: context.auth.uid, actorName, tenantId, targetId: payload.id, targetName: (_c = eqSnap.data()) === null || _c === void 0 ? void 0 : _c.name }).catch(console.error);
-        createAdminNotification(tenantId, 'Demande d\'archivage', `${actorName} demande l'archivage de "${(_d = eqSnap.data()) === null || _d === void 0 ? void 0 : _d.name}".`, 'WARNING').catch(console.error);
+        writeAuditLog({ action: 'EQUIPMENT_ARCHIVE_REQUESTED', actorId: context.auth.uid, actorName, tenantId, targetId: payload.id, targetName: eqSnap.data()?.name }).catch(console.error);
+        createAdminNotification(tenantId, 'Demande d\'archivage', `${actorName} demande l'archivage de "${eqSnap.data()?.name}".`, 'WARNING').catch(console.error);
         return { success: true };
     }
     if (action === "CANCEL_ARCHIVE_REQUEST") {
@@ -550,7 +593,7 @@ exports.manageEquipment = functions
             archiveRequestedBy: firestore_1.FieldValue.delete(),
             archiveRequestedByName: firestore_1.FieldValue.delete(),
         });
-        writeAuditLog({ action: 'EQUIPMENT_ARCHIVED', actorId: context.auth.uid, actorName, tenantId, targetId: payload.id, targetName: (_e = eqSnap.data()) === null || _e === void 0 ? void 0 : _e.name }).catch(console.error);
+        writeAuditLog({ action: 'EQUIPMENT_ARCHIVED', actorId: context.auth.uid, actorName, tenantId, targetId: payload.id, targetName: eqSnap.data()?.name }).catch(console.error);
         return { success: true };
     }
     if (action === "FORCE_RETURN") {
@@ -586,7 +629,7 @@ exports.manageEquipment = functions
         if (!eqSnap.exists)
             throw new functions.https.HttpsError("not-found", "Équipement introuvable.");
         await eqRef.update({ isArchived: false, status: "AVAILABLE" });
-        writeAuditLog({ action: 'EQUIPMENT_REACTIVATED', actorId: context.auth.uid, actorName, tenantId, targetId: payload.id, targetName: (_f = eqSnap.data()) === null || _f === void 0 ? void 0 : _f.name }).catch(console.error);
+        writeAuditLog({ action: 'EQUIPMENT_REACTIVATED', actorId: context.auth.uid, actorName, tenantId, targetId: payload.id, targetName: eqSnap.data()?.name }).catch(console.error);
         return { success: true };
     }
     return { success: false };
@@ -601,7 +644,7 @@ exports.manageStructure = functions
     const actorName = `${actorData.firstName} ${actorData.lastName}`;
     if (action === "CREATE_TENANT") {
         const ref = db.collection("tenants").doc();
-        await ref.set(Object.assign(Object.assign({ id: ref.id }, payload), { status: "ACTIVE", createdAt: firestore_1.FieldValue.serverTimestamp() }));
+        await ref.set({ id: ref.id, ...payload, status: "ACTIVE", createdAt: firestore_1.FieldValue.serverTimestamp() });
         writeAuditLog({ action: 'TENANT_CREATED', actorId: context.auth.uid, actorName, tenantId: ref.id, targetId: ref.id, targetName: payload.name }).catch(console.error);
         return { id: ref.id };
     }
@@ -621,7 +664,7 @@ exports.manageSite = functions
     await verifyAccess(context.auth.uid, tenantId, ["TECHNICIAN", "ADMIN"]);
     const coll = db.collection("tenants").doc(tenantId).collection("sites");
     if (action === "CREATE") {
-        const ref = await coll.add(Object.assign(Object.assign({}, payload), { isArchived: false, createdAt: new Date().toISOString() }));
+        const ref = await coll.add({ ...payload, isArchived: false, createdAt: new Date().toISOString() });
         return { id: ref.id, success: true };
     }
     if (action === "UPDATE") {
@@ -637,7 +680,6 @@ exports.manageSite = functions
 exports.submitReport = functions
     .region("australia-southeast1")
     .https.onCall(async (data, context) => {
-    var _a, _b, _c, _d;
     const { incidentReport, tenantId, action } = data;
     if (!context.auth)
         throw new functions.https.HttpsError("unauthenticated", "Auth required.");
@@ -646,7 +688,7 @@ exports.submitReport = functions
         const reportRef = db.collection("tenants").doc(tenantId).collection("incidentReports").doc(incidentReport.id);
         const reportSnap = await reportRef.get();
         await reportRef.update({ status: "ARCHIVED" });
-        writeAuditLog({ action: 'TICKET_ARCHIVED', actorId: context.auth.uid, actorName: `${actorData.firstName} ${actorData.lastName}`, tenantId, targetId: incidentReport.id, targetName: (_a = reportSnap.data()) === null || _a === void 0 ? void 0 : _a.equipmentNameSnapshot }).catch(console.error);
+        writeAuditLog({ action: 'TICKET_ARCHIVED', actorId: context.auth.uid, actorName: `${actorData.firstName} ${actorData.lastName}`, tenantId, targetId: incidentReport.id, targetName: reportSnap.data()?.equipmentNameSnapshot }).catch(console.error);
         return { success: true };
     }
     if (action === "UPDATE_STATUS") {
@@ -665,9 +707,9 @@ exports.submitReport = functions
         const reportSnap = await reportRef.get();
         const reportData = reportSnap.data();
         await reportRef.update(updateData);
-        writeAuditLog({ action: 'TICKET_STATUS_CHANGED', actorId: context.auth.uid, actorName: `${actorData.firstName} ${actorData.lastName}`, tenantId, targetId: incidentReport.id, targetName: reportData === null || reportData === void 0 ? void 0 : reportData.equipmentNameSnapshot, details: { newStatus: incidentReport.status } }).catch(console.error);
+        writeAuditLog({ action: 'TICKET_STATUS_CHANGED', actorId: context.auth.uid, actorName: `${actorData.firstName} ${actorData.lastName}`, tenantId, targetId: incidentReport.id, targetName: reportData?.equipmentNameSnapshot, details: { newStatus: incidentReport.status } }).catch(console.error);
         // Auto-update equipment traceability dates on resolution
-        if (incidentReport.status === 'RESOLVED' && (reportData === null || reportData === void 0 ? void 0 : reportData.equipmentId)) {
+        if (incidentReport.status === 'RESOLVED' && reportData?.equipmentId) {
             const eqRef = db.collection("tenants").doc(tenantId).collection("equipments").doc(reportData.equipmentId);
             const eqUpdates = {};
             const resolvedAt = new Date().toISOString();
@@ -688,13 +730,21 @@ exports.submitReport = functions
     const userDoc = await db.collection("users").doc(context.auth.uid).get();
     const userData = userDoc.data();
     const eqSnap = await db.collection("tenants").doc(tenantId).collection("equipments").doc(incidentReport.equipmentId).get();
-    const record = Object.assign(Object.assign({}, incidentReport), { userId: context.auth.uid, userNameSnapshot: `${userData === null || userData === void 0 ? void 0 : userData.firstName} ${userData === null || userData === void 0 ? void 0 : userData.lastName}`, equipmentNameSnapshot: ((_b = eqSnap.data()) === null || _b === void 0 ? void 0 : _b.name) || "Inconnu", status: "OPEN", timestamp: new Date().toISOString(), serverTimestamp: firestore_1.Timestamp.now() });
+    const record = {
+        ...incidentReport,
+        userId: context.auth.uid,
+        userNameSnapshot: `${userData?.firstName} ${userData?.lastName}`,
+        equipmentNameSnapshot: eqSnap.data()?.name || "Inconnu",
+        status: "OPEN",
+        timestamp: new Date().toISOString(),
+        serverTimestamp: firestore_1.Timestamp.now(),
+    };
     const ref = await db.collection("tenants").doc(tenantId).collection("incidentReports").add(record);
     // Auto-update eq status if not batch
-    if (!((_c = eqSnap.data()) === null || _c === void 0 ? void 0 : _c.isBatch)) {
+    if (!eqSnap.data()?.isBatch) {
         await eqSnap.ref.update({ status: 'MAINTENANCE' });
     }
-    await createManagerNotification(tenantId, `Nouvel Incident Signalé: ${incidentReport.priority}`, `L'équipement ${((_d = eqSnap.data()) === null || _d === void 0 ? void 0 : _d.name) || "Inconnu"} requiert une attention.`, incidentReport.priority === 'CRITICAL' ? 'CRITICAL' : 'WARNING');
+    await createManagerNotification(tenantId, `Nouvel Incident Signalé: ${incidentReport.priority}`, `L'équipement ${eqSnap.data()?.name || "Inconnu"} requiert une attention.`, incidentReport.priority === 'CRITICAL' ? 'CRITICAL' : 'WARNING');
     return { id: ref.id };
 });
 exports.manageChecklist = functions
@@ -706,7 +756,7 @@ exports.manageChecklist = functions
     await verifyAccess(context.auth.uid, tenantId, ["TECHNICIAN", "ADMIN"]);
     const coll = db.collection("tenants").doc(tenantId).collection("checklists");
     if (action === "CREATE") {
-        const ref = await coll.add(Object.assign(Object.assign({}, payload), { isArchived: false }));
+        const ref = await coll.add({ ...payload, isArchived: false });
         return { id: ref.id };
     }
     if (action === "UPDATE") {
@@ -722,7 +772,6 @@ exports.manageChecklist = functions
 exports.submitChecklistAnswers = functions
     .region("australia-southeast1")
     .https.onCall(async (data, context) => {
-    var _a, _b, _c;
     const { tenantId, payload } = data;
     if (!context.auth)
         throw new functions.https.HttpsError("unauthenticated", "Auth required.");
@@ -732,15 +781,29 @@ exports.submitChecklistAnswers = functions
         const userDoc = await db.collection("users").doc(context.auth.uid).get();
         const userData = userDoc.data();
         const eqSnap = await db.collection("tenants").doc(tenantId).collection("equipments").doc(payload.incidentReportData.equipmentId).get();
-        const incidentRecord = Object.assign(Object.assign({}, payload.incidentReportData), { userId: context.auth.uid, userNameSnapshot: `${userData === null || userData === void 0 ? void 0 : userData.firstName} ${userData === null || userData === void 0 ? void 0 : userData.lastName}`, equipmentNameSnapshot: ((_a = eqSnap.data()) === null || _a === void 0 ? void 0 : _a.name) || "Inconnu", status: "OPEN", timestamp: new Date().toISOString(), serverTimestamp: firestore_1.Timestamp.now() });
+        const incidentRecord = {
+            ...payload.incidentReportData,
+            userId: context.auth.uid,
+            userNameSnapshot: `${userData?.firstName} ${userData?.lastName}`,
+            equipmentNameSnapshot: eqSnap.data()?.name || "Inconnu",
+            status: "OPEN",
+            timestamp: new Date().toISOString(),
+            serverTimestamp: firestore_1.Timestamp.now(),
+        };
         const incidentRef = await db.collection("tenants").doc(tenantId).collection("incidentReports").add(incidentRecord);
         payload.ticketId = incidentRef.id;
-        if (!((_b = eqSnap.data()) === null || _b === void 0 ? void 0 : _b.isBatch)) {
+        if (!eqSnap.data()?.isBatch) {
             await eqSnap.ref.update({ status: 'MAINTENANCE' });
         }
-        await createManagerNotification(tenantId, `Étape de Checklist Échouée`, `Sur l'équipement ${((_c = eqSnap.data()) === null || _c === void 0 ? void 0 : _c.name) || "Inconnu"}. Intervention bloquante signalée.`, "CRITICAL");
+        await createManagerNotification(tenantId, `Étape de Checklist Échouée`, `Sur l'équipement ${eqSnap.data()?.name || "Inconnu"}. Intervention bloquante signalée.`, "CRITICAL");
     }
-    const record = Object.assign(Object.assign({}, payload), { incidentReportData: firestore_1.FieldValue.delete(), userId: context.auth.uid, timestamp: new Date().toISOString(), serverTimestamp: firestore_1.Timestamp.now() });
+    const record = {
+        ...payload,
+        incidentReportData: firestore_1.FieldValue.delete(),
+        userId: context.auth.uid,
+        timestamp: new Date().toISOString(),
+        serverTimestamp: firestore_1.Timestamp.now(),
+    };
     const ref = await db.collection("tenants").doc(tenantId).collection("maintenanceLogs").add(record);
     return { id: ref.id };
 });
@@ -753,7 +816,7 @@ exports.manageEquipmentType = functions
     await verifyAccess(context.auth.uid, tenantId, ["TECHNICIAN", "ADMIN"]);
     const coll = db.collection("tenants").doc(tenantId).collection("equipmentTypes");
     if (action === "CREATE") {
-        const ref = await coll.add(Object.assign(Object.assign({}, payload), { tenantId, isArchived: false, createdAt: new Date().toISOString() }));
+        const ref = await coll.add({ ...payload, tenantId, isArchived: false, createdAt: new Date().toISOString() });
         return { id: ref.id };
     }
     if (action === "ARCHIVE") {
@@ -789,7 +852,7 @@ exports.manageCdilUnit = functions
         return { id: ref.id };
     }
     if (action === "UPDATE") {
-        const { id } = payload, updates = __rest(payload, ["id"]);
+        const { id, ...updates } = payload;
         await coll.doc(id).update(updates);
         return { success: true };
     }
@@ -803,14 +866,13 @@ exports.manageCdilUnit = functions
 exports.manageVisitSession = functions
     .region("australia-southeast1")
     .https.onCall(async (data, context) => {
-    var _a, _b;
     if (!context.auth)
         throw new functions.https.HttpsError("unauthenticated", "Auth required.");
     const { action, tenantId, payload } = data;
     await verifyAccess(context.auth.uid, tenantId, ["TECHNICIAN", "ADMIN"]);
     const userDoc = await db.collection("users").doc(context.auth.uid).get();
     const userData = userDoc.data();
-    const technicianName = `${userData === null || userData === void 0 ? void 0 : userData.firstName} ${userData === null || userData === void 0 ? void 0 : userData.lastName}`;
+    const technicianName = `${userData?.firstName} ${userData?.lastName}`;
     const coll = db.collection("tenants").doc(tenantId).collection("visitSessions");
     if (action === "CREATE") {
         const type = payload.type || "CDIL";
@@ -867,18 +929,22 @@ exports.manageVisitSession = functions
             if (!entry.unitId)
                 continue;
             const unitRef = db.collection("tenants").doc(tenantId).collection("cdilUnits").doc(entry.unitId);
-            batch.update(unitRef, Object.assign({ lastVisitDate: now, currentState: { buse: entry.buse, crepine: entry.crepine, ligne: entry.ligne } }, (entry.remarks ? { notes: entry.remarks } : {})));
+            batch.update(unitRef, {
+                lastVisitDate: now,
+                currentState: { buse: entry.buse, crepine: entry.crepine, ligne: entry.ligne },
+                ...(entry.remarks ? { notes: entry.remarks } : {}),
+            });
         }
         // Clôturer la session
         batch.update(sessionRef, { status: "COMPLETED", completedAt: now });
         await batch.commit();
-        writeAuditLog({ action: "VISIT_SESSION_COMPLETED", actorId: context.auth.uid, actorName: technicianName, tenantId, targetId: payload.sessionId, targetName: session.title, details: { type: session.type, unitCount: (_a = session.entries) === null || _a === void 0 ? void 0 : _a.length } }).catch(console.error);
+        writeAuditLog({ action: "VISIT_SESSION_COMPLETED", actorId: context.auth.uid, actorName: technicianName, tenantId, targetId: payload.sessionId, targetName: session.title, details: { type: session.type, unitCount: session.entries?.length } }).catch(console.error);
         return { success: true };
     }
     if (action === "DELETE_DRAFT") {
         const sessionRef = coll.doc(payload.sessionId);
         const snap = await sessionRef.get();
-        if (((_b = snap.data()) === null || _b === void 0 ? void 0 : _b.status) !== "DRAFT")
+        if (snap.data()?.status !== "DRAFT")
             throw new functions.https.HttpsError("failed-precondition", "Seules les sessions en brouillon peuvent être supprimées.");
         await sessionRef.delete();
         return { success: true };
@@ -888,13 +954,12 @@ exports.manageVisitSession = functions
 exports.manageSignalement = functions
     .region("australia-southeast1")
     .https.onCall(async (data, context) => {
-    var _a, _b, _c, _d;
     if (!context.auth)
         throw new functions.https.HttpsError("unauthenticated", "Auth required.");
     const { action, tenantId, payload } = data;
     const { user: actorData, isGlobalAdmin } = await verifyAccess(context.auth.uid, tenantId, ["AGENT", "CLIENT", "TECHNICIAN", "ADMIN"]);
     const actorName = `${actorData.firstName} ${actorData.lastName}`;
-    const actorRole = (((_a = actorData.tenantsAccess) === null || _a === void 0 ? void 0 : _a[tenantId]) || actorData.role || "AGENT");
+    const actorRole = (actorData.tenantsAccess?.[tenantId] || actorData.role || "AGENT");
     const canManage = isGlobalAdmin || actorRole === "TECHNICIAN" || actorRole === "ADMIN";
     const coll = db.collection("tenants").doc(tenantId).collection("signalements");
     if (action === "CREATE") {
@@ -933,18 +998,18 @@ exports.manageSignalement = functions
             createdAt: new Date().toISOString(),
         };
         const updates = { replies: firestore_1.FieldValue.arrayUnion(reply) };
-        if (((_b = snap.data()) === null || _b === void 0 ? void 0 : _b.status) === "NEW")
+        if (snap.data()?.status === "NEW")
             updates.status = "IN_PROGRESS";
         await ref.update(updates);
-        writeAuditLog({ action: "SIGNALEMENT_UPDATED", actorId: context.auth.uid, actorName, tenantId, targetId: payload.id, targetName: (_c = snap.data()) === null || _c === void 0 ? void 0 : _c.title, details: { action: "reply" } }).catch(console.error);
+        writeAuditLog({ action: "SIGNALEMENT_UPDATED", actorId: context.auth.uid, actorName, tenantId, targetId: payload.id, targetName: snap.data()?.title, details: { action: "reply" } }).catch(console.error);
         const sigData = snap.data();
         const preview = (payload.message || '').slice(0, 80);
         const isManagerActor = actorRole === "TECHNICIAN" || actorRole === "ADMIN";
-        if (isManagerActor && (sigData === null || sigData === void 0 ? void 0 : sigData.createdBy) && sigData.createdBy !== context.auth.uid) {
+        if (isManagerActor && sigData?.createdBy && sigData.createdBy !== context.auth.uid) {
             createUserNotification(sigData.createdBy, tenantId, "Réponse à votre signalement", `${actorName} a répondu : "${preview}"`, "INFO").catch(console.error);
         }
         else if (!isManagerActor) {
-            createManagerNotification(tenantId, "Réponse client sur signalement", `${actorName} a répondu au signalement "${sigData === null || sigData === void 0 ? void 0 : sigData.title}"`, "INFO").catch(console.error);
+            createManagerNotification(tenantId, "Réponse client sur signalement", `${actorName} a répondu au signalement "${sigData?.title}"`, "INFO").catch(console.error);
         }
         return { success: true };
     }
@@ -957,7 +1022,7 @@ exports.manageSignalement = functions
         writeAuditLog({ action: "SIGNALEMENT_UPDATED", actorId: context.auth.uid, actorName, tenantId, targetId: payload.id, details: { status: payload.status } }).catch(console.error);
         if (payload.status === "RESOLVED") {
             const statusSigData = statusSnap.data();
-            if ((statusSigData === null || statusSigData === void 0 ? void 0 : statusSigData.createdBy) && statusSigData.createdBy !== context.auth.uid) {
+            if (statusSigData?.createdBy && statusSigData.createdBy !== context.auth.uid) {
                 createUserNotification(statusSigData.createdBy, tenantId, "Signalement résolu", `Votre signalement "${statusSigData.title}" a été marqué comme résolu par ${actorName}.`, "INFO").catch(console.error);
             }
         }
@@ -974,9 +1039,9 @@ exports.manageSignalement = functions
             closedBy: context.auth.uid,
             closedByName: actorName,
         });
-        writeAuditLog({ action: "SIGNALEMENT_CLOSED", actorId: context.auth.uid, actorName, tenantId, targetId: payload.id, targetName: (_d = snap.data()) === null || _d === void 0 ? void 0 : _d.title }).catch(console.error);
+        writeAuditLog({ action: "SIGNALEMENT_CLOSED", actorId: context.auth.uid, actorName, tenantId, targetId: payload.id, targetName: snap.data()?.title }).catch(console.error);
         const closedSigData = snap.data();
-        if ((closedSigData === null || closedSigData === void 0 ? void 0 : closedSigData.createdBy) && closedSigData.createdBy !== context.auth.uid) {
+        if (closedSigData?.createdBy && closedSigData.createdBy !== context.auth.uid) {
             createUserNotification(closedSigData.createdBy, tenantId, "Signalement clôturé", `Votre signalement "${closedSigData.title}" a été clôturé par ${actorName}.`, "INFO").catch(console.error);
         }
         return { success: true };
@@ -1004,7 +1069,7 @@ exports.seedSystem = functions
         uid = user.uid;
         await auth.updateUser(uid, { password, disabled: false });
     }
-    catch (_a) {
+    catch {
         const user = await auth.createUser({ email, password, displayName: "Super Admin" });
         uid = user.uid;
     }
@@ -1031,5 +1096,80 @@ exports.nukePlatform = functions
     .runWith({ timeoutSeconds: 540, memory: "1GB" })
     .https.onCall(async (data, context) => {
     return { success: false, message: "Disabled for safety." };
+});
+// ─── GMAO (branche CSP) ─────────────────────────────────────────────────────
+const core_1 = require("./gmao/core");
+const firestoreStore_1 = require("./gmao/firestoreStore");
+const model_1 = require("./gmao/model");
+async function applyGmaoEffects(tenantId, actorId, actorName, effects) {
+    for (const e of effects) {
+        try {
+            if (e.type === "notifyManagers")
+                await createManagerNotification(tenantId, e.title, e.message, e.level);
+            else if (e.type === "notifyUser")
+                await createUserNotification(e.userId, tenantId, e.title, e.message, e.level);
+            else if (e.type === "audit")
+                await writeAuditLog({ action: e.action, actorId, actorName, tenantId, targetId: e.targetId, targetName: e.targetName, details: e.details });
+        }
+        catch (err) {
+            console.error("[GMAO] effet non appliqué", e.type, err);
+        }
+    }
+}
+exports.gmaoAction = functions
+    .region("australia-southeast1")
+    .https.onCall(async (data, context) => {
+    if (!context.auth)
+        throw new functions.https.HttpsError("unauthenticated", "Connexion requise.");
+    const { tenantId, action, payload } = data || {};
+    if (!tenantId || tenantId === "platform")
+        throw new functions.https.HttpsError("invalid-argument", "Organisation invalide.");
+    const { user, isGlobalAdmin } = await verifyAccess(context.auth.uid, tenantId, ["ADMIN", "TECHNICIAN", "AGENT", "CLIENT"]);
+    const mikiRole = isGlobalAdmin ? "ADMIN" : (user.tenantsAccess?.[tenantId] || user.role);
+    const actorName = `${user.firstName || ""} ${user.lastName || ""}`.trim() || user.email;
+    const ctx = {
+        store: (0, firestoreStore_1.firestoreStore)(db, tenantId),
+        actor: { id: context.auth.uid, name: actorName, role: model_1.ROLE_FROM_MIKI[mikiRole] || "DEMANDEUR" },
+        now: new Date(),
+        effects: [],
+    };
+    try {
+        const result = await (0, core_1.handleGmaoAction)(ctx, action, payload);
+        await applyGmaoEffects(tenantId, context.auth.uid, actorName, ctx.effects);
+        return result ?? { success: true };
+    }
+    catch (err) {
+        if (err instanceof core_1.GmaoError)
+            throw new functions.https.HttpsError(err.code, err.message);
+        console.error("[GMAO]", action, err);
+        throw new functions.https.HttpsError("internal", "Erreur serveur GMAO.");
+    }
+});
+// Génère chaque matin les BT préventifs arrivés à échéance (calendrier ou compteur).
+exports.gmaoDailyPreventiveScan = functions
+    .region("australia-southeast1")
+    .pubsub.schedule("0 5 * * *")
+    .timeZone("Pacific/Noumea")
+    .onRun(async () => {
+    const tenants = await db.collection("tenants").get();
+    for (const t of tenants.docs) {
+        const plans = await t.ref.collection("gmaoPmPlans").limit(1).get();
+        if (plans.empty)
+            continue;
+        const ctx = {
+            store: (0, firestoreStore_1.firestoreStore)(db, t.id),
+            actor: { id: "system", name: "Planification automatique", role: "RESPONSABLE" },
+            now: new Date(),
+            effects: [],
+        };
+        try {
+            await (0, core_1.runPreventiveScan)(ctx);
+            await applyGmaoEffects(t.id, "system", "Planification automatique", ctx.effects);
+        }
+        catch (err) {
+            console.error(`[GMAO] scan préventif échoué pour ${t.id}`, err);
+        }
+    }
+    return null;
 });
 //# sourceMappingURL=index.js.map

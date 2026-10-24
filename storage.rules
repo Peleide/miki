@@ -4,5 +4,16 @@ service firebase.storage {
     match /tenants/{tenantId}/visitSessions/{allPaths=**} {
       allow read, write, delete: if request.auth != null;
     }
+
+    // GMAO (branche CSP) : photos de demandes / BT, documents des équipements.
+    // Lecture et dépôt réservés aux membres du tenant ; 20 Mo maximum ; pas de suppression côté client.
+    match /tenants/{tenantId}/gmao/{allPaths=**} {
+      function isMember() {
+        let u = firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data;
+        return (tenantId in u.tenantsAccess) || u.tenantsAccess.get('platform', '') == 'ADMIN';
+      }
+      allow read: if request.auth != null && isMember();
+      allow create: if request.auth != null && isMember() && request.resource.size < 20 * 1024 * 1024;
+    }
   }
 }

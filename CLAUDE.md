@@ -1,5 +1,74 @@
 # MIKI — Documentation Projet
 
+> **Branche `csp`** : GMAO sur mesure pour la CSP (Calédonienne de Services Publics), niveau 1, **sans aucune
+> interconnexion** avec leurs outils (Sage, Yooz, Navitec) et sans reprise des fichiers Excel existants.
+> Voir la section « GMAO CSP » ci-dessous ; le reste du document décrit le socle Miki hérité de `vivian`.
+
+## GMAO CSP (branche `csp`)
+
+### Démarrer
+```bash
+# Démo sans Firebase (toute la logique tourne dans le navigateur, données fictives en localStorage)
+npm run dev            # puis http://localhost:3000/?demo
+# Tests de la logique métier (sans émulateur)
+cd functions && npm test
+# Émulateurs : après `firebase emulators:start`
+node scripts/seedCsp.mjs   # tenant `csp`, comptes resp@ / tech1@ / tech2@ / tech3@ / demandeur@csp.test (password123)
+```
+
+### Activation par organisation
+L'interface GMAO s'affiche pour une organisation si `tenants/{id}.modules.gmao == true` (à poser dans la console
+Firestore, le seed le fait pour `csp`). Les autres organisations gardent l'interface Miki classique : la branche peut
+donc être déployée sans casser les autres clients. **Recommandé quand même : un projet Firebase dédié à la CSP.**
+
+### Architecture
+| Fichier | Rôle |
+|---|---|
+| `functions/src/gmao/model.ts` | Types, libellés, référentiels (familles EN/BEN/VL/RE/PL/IF/QAV, sociétés CSP/SAMERTOWN/CDV, types d'intervention, priorités P1–P4). **Partagé front / back.** |
+| `functions/src/gmao/rules.ts` | Règles pures : priorité suggérée, échéances préventives, disponibilité, coûts. |
+| `functions/src/gmao/core.ts` | `handleGmaoAction(ctx, action, payload)` : **toutes** les mutations + permissions par rôle. Effets (notifications, audit) renvoyés dans `ctx.effects`. |
+| `functions/src/gmao/firestoreStore.ts` / `memoryStore.ts` | Stockage Firestore (prod) / mémoire (démo, tests). |
+| `functions/src/gmao/seed.ts` | Jeu de démo CSP, rejoue ~90 jours d'activité via `handleGmaoAction`. |
+| `functions/src/index.ts` (fin) | Cloud Functions `gmaoAction` (callable unique) et `gmaoDailyPreventiveScan` (05:00 Nouméa, nécessite le plan Blaze). |
+| `services/gmao/*` | `GmaoBackend` : `firebaseBackend` (callable + `onSnapshot`) ou `demoBackend` (même cœur, en mémoire). |
+| `components/gmao/*` | `GmaoShell` (navigation par rôle), vues `Dashboard`, `Planning`, `WorkOrders`, `Requests`, `Preventive`, `Assets`, `Terrain`, `Settings`. |
+
+Le front importe `functions/src/gmao/*` directement (Vite). `functions/lib` est versionné : **rebuild après chaque
+modification** (`cd functions && npm run build`).
+
+### Rôles
+| Rôle Miki | Rôle GMAO | Droits |
+|---|---|---|
+| ADMIN / TECHNICIAN | Responsable maintenance | Tout : approuve les DI, crée/planifie les BT, gammes, planning, réglages, comptes |
+| AGENT | Technicien | Son planning, démarre / clôture **ses** BT, relevés compteur, état machine, DI |
+| CLIENT | Demandeur / direction | Crée des DI, suit leur état, consulte parc et tableau de bord |
+
+### Collections Firestore (`tenants/{tenantId}/…`)
+`gmaoAssets` (arborescence équipement > sous-équipement > composant via `parentId`), `gmaoAssetEvents` (états et
+relevés, base des indicateurs), `gmaoRequests` (DI), `gmaoWorkOrders` (BT), `gmaoPmPlans` (gammes + `schedule` par
+équipement), `gmaoTasks` (tâches, congés, formations du planning), `checklists` (partagée, `kind` MAINTENANCE /
+SECURITE), `sites`, `counters/gmao` (numéros DI-AAAA-NNNN / BT-AAAA-NNNN). Réglages : champ `gmao` du document tenant
+(`hourlyRate`, `safetyChecklistId`). Fichiers : Storage `tenants/{id}/gmao/**` (membres du tenant, 20 Mo max).
+
+### Flux
+- **DI** `A_APPROUVER → APPROUVEE → PLANIFIEE → CLOTUREE` (ou `ANNULEE`). Priorité suggérée : sécurité ou arrêt → P1 ;
+  réglementaire ou dégradé → P2 ; sans impact → P3 ; confort → P4. L'état déclaré dégrade l'état de la machine.
+- **BT** `A_PLANIFIER → PLANIFIE → EN_COURS → CLOTURE` (+ `EN_ATTENTE`, `ANNULE`). Démarrage bloqué si la check-list
+  de sécurité (Take 5 / permis feu) a un point « Non ». Clôture : rapport obligatoire, check-list, coûts, état machine.
+- **Préventif** : calendaire (jours/semaines/mois) ou compteur (h / km). BT créé à `échéance − alerte`, un seul BT
+  ouvert par gamme × équipement ; clôture → prochaine échéance depuis la date réelle ; annulation → occurrence sautée.
+- **Disponibilité** : le mode dégradé compte comme disponible (CDC 4.1.2).
+
+### Hors périmètre (volontairement, niveau 1)
+Stock de pièces, achats, fournisseurs, budgets, prises de mesures hors compteur, interfaces Sage / Yooz / Navitec,
+reprise Dimo Maint / Excel, hors-ligne, saisie vocale.
+
+### Limites connues
+- Les règles Firestore laissent tout membre du tenant lire les coûts (masqués dans l'interface du demandeur seulement).
+- Un admin plateforme n'est pas proposé comme intervenant (non listé dans les comptes du tenant).
+- L'émulateur Firestore n'a pas pu être lancé dans l'environnement de développement initial : la logique est testée
+  (unitaire + Firestore simulé + parcours navigateur en mode démo), mais un passage complet sur émulateurs reste à faire.
+
 ## Vue d'ensemble
 Application de gestion de parc matériel hospitalier, SaaS multi-tenant.  
 React 19 + Vite 6 SPA, TypeScript, Tailwind CSS.  

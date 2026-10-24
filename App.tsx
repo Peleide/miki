@@ -15,6 +15,9 @@ import { db } from './services/db';
 import { auth } from './services/firebaseConfig';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { Loader2, QrCode } from 'lucide-react';
+import { GmaoShell } from './components/gmao/GmaoShell';
+import { firebaseBackend } from './services/gmao/firebaseBackend';
+import { ROLE_FROM_MIKI } from './functions/src/gmao/model';
 
 function App() {
   const [user, setUser] = useState<User | null>(null);
@@ -127,6 +130,16 @@ function App() {
     };
   }, []);
 
+  // Module GMAO activé par organisation (tenants/{id}.modules.gmao = true).
+  const [gmaoByTenant, setGmaoByTenant] = useState<Record<string, boolean>>({});
+  useEffect(() => {
+    const tid = user?.tenantId;
+    if (!tid || tid === 'platform' || tid in gmaoByTenant) return;
+    db.getTenant(tid)
+      .then(t => setGmaoByTenant(prev => ({ ...prev, [tid]: !!(t as any)?.modules?.gmao })))
+      .catch(() => setGmaoByTenant(prev => ({ ...prev, [tid]: false })));
+  }, [user?.tenantId]);
+
   const handleNavigate = (view: string) => {
       setCurrentView(view);
       if (user) {
@@ -197,6 +210,15 @@ function App() {
     );
   }
 
+  // Organisations avec le module GMAO (ex. CSP) : interface GMAO. Les autres gardent l'interface Miki classique.
+  if (user.tenantId !== 'platform') {
+    const gmao = gmaoByTenant[user.tenantId];
+    if (gmao === undefined) {
+      return <div className="h-full w-full flex items-center justify-center bg-background"><Loader2 size={40} className="text-primary animate-spin opacity-40" /></div>;
+    }
+    if (gmao) return <CspGmao user={user} onLogout={handleLogout} onSwitchTenant={handleSwitchTenant} />;
+  }
+
   return (
     <Layout 
       user={user} 
@@ -244,6 +266,26 @@ function App() {
       )}
     </Layout>
   );
+}
+
+function CspGmao({ user, onLogout, onSwitchTenant }: { user: User; onLogout: () => void; onSwitchTenant: (id: string) => void }) {
+  const backend = React.useMemo(() => firebaseBackend(user), [user.id, user.tenantId, user.role]);
+  const [orgName, setOrgName] = useState('');
+  const [tenants, setTenants] = useState<{ id: string; name: string }[]>([]);
+  useEffect(() => {
+    db.getTenant(user.tenantId).then(t => setOrgName(t?.name || '')).catch(() => {});
+    db.getTenantsForUser(user).then(list => {
+      const isPlatformAdmin = user.tenantsAccess['platform'] === UserRole.ADMIN;
+      setTenants([...(isPlatformAdmin ? [{ id: 'platform', name: 'Console super admin' }] : []), ...list.map(t => ({ id: t.id, name: t.name }))]);
+    }).catch(() => {});
+  }, [user.tenantId]);
+  const me = { id: user.id, name: `${user.firstName} ${user.lastName}`.trim() || user.email, role: ROLE_FROM_MIKI[user.role] || 'DEMANDEUR' as const };
+  const switcher = tenants.length > 1 ? (
+    <select aria-label="Changer d'organisation" value={user.tenantId} onChange={e => onSwitchTenant(e.target.value)} className="hidden sm:block bg-gray-50 border border-border text-xs font-bold rounded-xl px-2 py-2 max-w-[180px]">
+      {tenants.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+    </select>
+  ) : null;
+  return <GmaoShell key={`${user.tenantId}:${user.role}`} backend={backend} me={me} orgName={orgName || 'Maintenance'} onLogout={onLogout} headerExtra={switcher} />;
 }
 
 export default App;
