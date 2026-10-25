@@ -12,7 +12,7 @@ service cloud.firestore {
     // Vérifie si l'utilisateur est un Admin Plateforme
     function isPlatformAdmin() {
       let data = getUserData();
-      return (data.tenantsAccess.platform == 'ADMIN') || 
+      return (data.get('tenantsAccess', {}).get('platform', '') == 'ADMIN') || 
              (data.accessibleTenantIds is list && data.accessibleTenantIds.hasAny(['platform']));
     }
 
@@ -20,7 +20,7 @@ service cloud.firestore {
     // CORRECTIF : On vérifie la map tenantsAccess OU la liste accessibleTenantIds (legacy)
     function hasTenantAccess(tenantId) {
       let userData = getUserData();
-      return (tenantId in userData.tenantsAccess) || 
+      return (tenantId in userData.get('tenantsAccess', {})) || 
              (userData.accessibleTenantIds is list && userData.accessibleTenantIds.hasAny([tenantId])) ||
              isPlatformAdmin();
     }
@@ -45,7 +45,7 @@ service cloud.firestore {
     // GMAO : un compte client (rattaché à une organisation cliente) ne lit que ce qui concerne ses machines.
     function gmaoClientId(tenantId) {
       let d = getUserData();
-      return ('gmaoClientIds' in d) && (tenantId in d.gmaoClientIds) ? d.gmaoClientIds[tenantId] : null;
+      return d.get('gmaoClientIds', {}).get(tenantId, null);
     }
     function isGmaoClient(tenantId) {
       return gmaoClientId(tenantId) != null && !isPlatformAdmin();
