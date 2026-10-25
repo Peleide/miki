@@ -4,9 +4,17 @@ import { QrCode, Search, X, Flag, CameraOff } from 'lucide-react';
 import { useGmao } from './GmaoContext';
 import { Button, Card, Empty, Label, PageHeader, PriorityBadge, StateBadge, fmtTime, WoStatusBadge } from './ui';
 import { RequestFormModal } from './RequestsView';
-import { OPEN_WORK_ORDER_STATUSES } from '../../functions/src/gmao/model';
+import { Asset, OPEN_WORK_ORDER_STATUSES, tokenFromScan } from '../../functions/src/gmao/model';
 
-/** Écran terrain : scanner le QR d'un engin (ou chercher son code) pour ouvrir sa fiche. */
+/** Retrouve la machine à partir du contenu d'un QR code : URL Miki (/q/jeton) ou code machine. */
+export function findAssetFromScan(assets: Asset[], text: string): Asset | undefined {
+  const t = String(text || '').trim();
+  const token = tokenFromScan(t);
+  if (token) return assets.find(a => a.qrToken === token);
+  return assets.find(a => a.qrToken === t) || assets.find(a => a.code.toUpperCase() === t.toUpperCase());
+}
+
+/** Écran terrain : scanner le QR d'une machine (ou chercher son code) pour ouvrir sa fiche. */
 export const TerrainView: React.FC = () => {
   const g = useGmao();
   const [scanning, setScanning] = useState(false);
@@ -15,11 +23,6 @@ export const TerrainView: React.FC = () => {
   const [declare, setDeclare] = useState(false);
   const scannerRef = useRef<Html5Qrcode | null>(null);
   const handled = useRef(false);
-
-  const findByScan = (text: string) => {
-    const t = text.trim();
-    return g.assets.find(a => a.qrCode === t) || g.assets.find(a => a.code.toUpperCase() === t.toUpperCase());
-  };
 
   const stop = async () => {
     const s = scannerRef.current;
@@ -38,24 +41,27 @@ export const TerrainView: React.FC = () => {
       { fps: 10, qrbox: (w, h) => { const s = Math.min(w, h) * 0.7; return { width: s, height: s }; } },
       text => {
         if (handled.current) return;
-        const asset = findByScan(text);
+        const asset = findAssetFromScan(g.assets, text);
         if (asset) {
           handled.current = true;
           stop();
           g.openAsset(asset.id);
         } else {
-          g.toast('QR code inconnu dans le parc.', 'info');
+          g.toast(g.isClient ? 'Cette machine ne fait pas partie de votre parc.' : 'QR code inconnu dans le parc.', 'info');
         }
       },
       () => { /* pas de QR dans l'image */ },
-    ).catch(() => { setCamError("Caméra indisponible : autorisez l'accès ou recherchez l'équipement par son code."); setScanning(false); });
+    ).catch(() => { setCamError("Caméra indisponible : autorisez l'accès ou recherchez la machine par son code."); setScanning(false); });
     return () => { stop(); };
   }, [scanning]);
 
   const results = useMemo(() => {
-    const s = q.trim().toLowerCase();
+    const s = q.trim();
     if (!s) return [];
-    return g.assets.filter(a => !a.isArchived && `${a.code} ${a.name} ${a.registration || ''}`.toLowerCase().includes(s)).slice(0, 12);
+    const exact = findAssetFromScan(g.assets, s);
+    if (exact) return [exact];
+    const low = s.toLowerCase();
+    return g.assets.filter(a => !a.isArchived && `${a.code} ${a.name} ${a.registration || ''} ${a.serialNumber || ''}`.toLowerCase().includes(low)).slice(0, 12);
   }, [q, g.assets]);
 
   const today = new Date(); today.setHours(0, 0, 0, 0);
@@ -66,7 +72,7 @@ export const TerrainView: React.FC = () => {
 
   return (
     <div className="max-w-xl mx-auto">
-      <PageHeader title="Terrain" subtitle="Scannez le QR code collé sur l'équipement pour ouvrir sa fiche." />
+      <PageHeader title="Scanner" subtitle={g.isClient ? 'Scannez le QR code d’une machine pour voir son suivi ou signaler un problème.' : 'Scannez le QR code collé sur la machine : ce qu’il y a à faire s’affiche.'} />
 
       <Card className="p-4 mb-4">
         {scanning ? (
@@ -77,13 +83,13 @@ export const TerrainView: React.FC = () => {
         ) : (
           <button onClick={() => { setCamError(''); setScanning(true); }} className="w-full rounded-2xl bg-primary text-white py-8 flex flex-col items-center gap-2 shadow-lg shadow-primary/20 active:scale-[0.99] transition-transform">
             <QrCode size={48} />
-            <span className="text-lg font-black">Scanner un équipement</span>
+            <span className="text-lg font-black">Scanner une machine</span>
           </button>
         )}
         {camError && <p className="text-sm text-orange-600 mt-3 flex gap-2"><CameraOff size={16} className="shrink-0" />{camError}</p>}
         <div className="flex items-center gap-2 border border-border rounded-2xl px-3 mt-3">
           <Search size={16} className="text-gray-400" />
-          <input value={q} onChange={e => setQ(e.target.value)} placeholder="… ou tapez un code (EN486, VL474…)" className="flex-1 py-3 text-sm focus:outline-none" />
+          <input value={q} onChange={e => setQ(e.target.value)} placeholder="… ou tapez un code, une immatriculation" className="flex-1 py-3 text-sm focus:outline-none" />
         </div>
         {results.length > 0 && (
           <div className="mt-2 divide-y divide-border">

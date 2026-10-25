@@ -23,10 +23,12 @@ export const storage = getStorage(app);
 export const functions = getFunctions(app, 'australia-southeast1');
 
 // Connexion aux émulateurs en développement local
+// L'hôte suit celui de la page : un téléphone du réseau local (http://192.168.x.x:3000) atteint aussi les émulateurs.
 if (import.meta.env.DEV) {
-  connectFirestoreEmulator(dbFirestore, 'localhost', 8080);
-  connectAuthEmulator(auth, 'http://localhost:9099', { disableWarnings: true });
-  connectFunctionsEmulator(functions, 'localhost', 5001);
-  connectStorageEmulator(storage, 'localhost', 9199);
+  const host = window.location.hostname || 'localhost';
+  connectFirestoreEmulator(dbFirestore, host, 8080);
+  connectAuthEmulator(auth, `http://${host}:9099`, { disableWarnings: true });
+  connectFunctionsEmulator(functions, host, 5001);
+  connectStorageEmulator(storage, host, 9199);
   console.info('[MIKI] Mode émulateur activé (Firestore:8080 | Auth:9099 | Functions:5001 | Storage:9199)');
 }

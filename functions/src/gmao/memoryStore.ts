@@ -1,5 +1,5 @@
 // Stockage en mémoire : mode démo du front et tests de la logique métier.
-import { CollName, DEFAULT_SETTINGS, GmaoSettings, GmaoUser } from './model';
+import { CollName, DEFAULT_SETTINGS, GmaoSettings, GmaoUser, TenantPlan, withDefaults } from './model';
 import type { GmaoStore } from './core';
 
 export interface MemoryState {
@@ -7,10 +7,12 @@ export interface MemoryState {
   counters: Record<string, number>;
   settings: GmaoSettings;
   users: GmaoUser[];
+  tenantName: string;
+  plan: TenantPlan | null;
 }
 
-export function emptyState(users: GmaoUser[] = []): MemoryState {
-  return { collections: {}, counters: {}, settings: { ...DEFAULT_SETTINGS }, users };
+export function emptyState(users: GmaoUser[] = [], plan: TenantPlan | null = null, tenantName = 'Démo'): MemoryState {
+  return { collections: {}, counters: {}, settings: { ...DEFAULT_SETTINGS }, users, tenantName, plan };
 }
 
 const copy = <T>(v: T): T => (v === undefined ? v : JSON.parse(JSON.stringify(v)));
@@ -30,8 +32,10 @@ export function memoryStore(state: MemoryState, onChange?: (coll: string) => voi
     async remove(coll, id) { delete c(coll)[id]; onChange?.(coll); },
     newId(coll) { seq++; return `${coll.replace('gmao', '').toLowerCase()}_${Date.now().toString(36)}${seq.toString(36)}${Math.random().toString(36).slice(2, 6)}`; },
     async nextNumber(key) { state.counters[key] = (state.counters[key] || 0) + 1; return state.counters[key]; },
-    async getSettings() { return { ...DEFAULT_SETTINGS, ...state.settings }; },
+    async getSettings() { return withDefaults(state.settings); },
     async saveSettings(s) { state.settings = copy(s); onChange?.('settings'); },
     async getUsers() { return copy(state.users); },
+    async getTenantInfo() { return { name: state.tenantName || 'Démo', plan: state.plan ? copy(state.plan) : null }; },
+    async registerQr() { /* l'index global n'existe qu'en production */ },
   };
 }

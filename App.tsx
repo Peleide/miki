@@ -16,8 +16,13 @@ import { auth } from './services/firebaseConfig';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { Loader2, QrCode } from 'lucide-react';
 import { GmaoShell } from './components/gmao/GmaoShell';
-import { firebaseBackend } from './services/gmao/firebaseBackend';
-import { ROLE_FROM_MIKI } from './functions/src/gmao/model';
+import { PublicReportPage } from './components/gmao/PublicReportPage';
+import { firebaseBackend, firebasePublicBackend } from './services/gmao/firebaseBackend';
+import { GmaoRole, ROLE_FROM_MIKI, tokenFromScan } from './functions/src/gmao/model';
+
+// QR code d'une machine : /q/<jeton>. Sans session → formulaire public ; avec session → fiche de la machine.
+const QR_TOKEN = tokenFromScan(window.location.pathname);
+const OPEN_TOKEN = QR_TOKEN || new URLSearchParams(window.location.search).get('open');
 
 function App() {
   const [user, setUser] = useState<User | null>(null);
@@ -197,6 +202,7 @@ function App() {
   }
 
   if (!user) {
+    if (QR_TOKEN) return <PublicReportPage backend={firebasePublicBackend()} token={QR_TOKEN} staffHref={`/?open=${QR_TOKEN}`} />;
     return <Login onLoginSuccess={() => {}} />; 
   }
 
@@ -210,13 +216,13 @@ function App() {
     );
   }
 
-  // Organisations avec le module GMAO (ex. CSP) : interface GMAO. Les autres gardent l'interface Miki classique.
+  // Organisations avec le module GMAO : interface GMAO. Les autres gardent l'interface Miki classique.
   if (user.tenantId !== 'platform') {
     const gmao = gmaoByTenant[user.tenantId];
     if (gmao === undefined) {
       return <div className="h-full w-full flex items-center justify-center bg-background"><Loader2 size={40} className="text-primary animate-spin opacity-40" /></div>;
     }
-    if (gmao) return <CspGmao user={user} onLogout={handleLogout} onSwitchTenant={handleSwitchTenant} />;
+    if (gmao) return <GmaoApp user={user} onLogout={handleLogout} onSwitchTenant={handleSwitchTenant} />;
   }
 
   return (
@@ -268,24 +274,32 @@ function App() {
   );
 }
 
-function CspGmao({ user, onLogout, onSwitchTenant }: { user: User; onLogout: () => void; onSwitchTenant: (id: string) => void }) {
-  const backend = React.useMemo(() => firebaseBackend(user), [user.id, user.tenantId, user.role]);
-  const [orgName, setOrgName] = useState('');
+function GmaoApp({ user, onLogout, onSwitchTenant }: { user: User; onLogout: () => void; onSwitchTenant: (id: string) => void }) {
+  const role: GmaoRole = ROLE_FROM_MIKI[user.role] || 'CLIENT';
+  const clientId: string | null = user.gmaoClientIds?.[user.tenantId] || null;
+  const name = `${user.firstName} ${user.lastName}`.trim() || user.email;
+  const backend = React.useMemo(() => firebaseBackend({ tenantId: user.tenantId, userId: user.id, name, role, clientId }), [user.id, user.tenantId, role, clientId]);
   const [tenants, setTenants] = useState<{ id: string; name: string }[]>([]);
   useEffect(() => {
-    db.getTenant(user.tenantId).then(t => setOrgName(t?.name || '')).catch(() => {});
     db.getTenantsForUser(user).then(list => {
       const isPlatformAdmin = user.tenantsAccess['platform'] === UserRole.ADMIN;
       setTenants([...(isPlatformAdmin ? [{ id: 'platform', name: 'Console super admin' }] : []), ...list.map(t => ({ id: t.id, name: t.name }))]);
     }).catch(() => {});
   }, [user.tenantId]);
-  const me = { id: user.id, name: `${user.firstName} ${user.lastName}`.trim() || user.email, role: ROLE_FROM_MIKI[user.role] || 'DEMANDEUR' as const };
+  const me = { id: user.id, name, role, clientId };
+  if (role === 'CLIENT' && !clientId) {
+    return (
+      <div className="h-full w-full flex items-center justify-center p-6 text-center">
+        <div><p className="font-black text-dark">Compte client non rattaché</p><p className="text-sm text-gray-500 mt-1">Demandez au responsable maintenance de rattacher votre compte à votre organisation.</p><button onClick={onLogout} className="mt-4 text-sm font-bold text-primary">Se déconnecter</button></div>
+      </div>
+    );
+  }
   const switcher = tenants.length > 1 ? (
     <select aria-label="Changer d'organisation" value={user.tenantId} onChange={e => onSwitchTenant(e.target.value)} className="hidden sm:block bg-gray-50 border border-border text-xs font-bold rounded-xl px-2 py-2 max-w-[180px]">
       {tenants.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
     </select>
   ) : null;
-  return <GmaoShell key={`${user.tenantId}:${user.role}`} backend={backend} me={me} orgName={orgName || 'Maintenance'} onLogout={onLogout} headerExtra={switcher} />;
+  return <GmaoShell key={`${user.tenantId}:${user.role}`} backend={backend} me={me} onLogout={onLogout} headerExtra={switcher} openToken={OPEN_TOKEN} />;
 }
 
 export default App;

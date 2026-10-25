@@ -52,13 +52,13 @@ const KIND_STYLE: Record<string, string> = {
 // ─── Tâche ───────────────────────────────────────────────────────────────────
 
 export const TaskModal: React.FC<{ onClose: () => void; task?: CalendarTask; defaults?: { date?: Date; userId?: string } }> = ({ onClose, task, defaults }) => {
-  const { users, sites, run, isResp, me, confirm } = useGmao();
-  const people = users.filter(u => u.role !== 'DEMANDEUR');
+  const { users, sites, run, isResp, isTech, canPlan, me, confirm } = useGmao();
+  const people = users.filter(u => u.role !== 'CLIENT');
   const baseDate = task ? new Date(task.start) : (defaults?.date || addDays(startOfDay(new Date()), 1));
   const [f, setF] = useState({
     title: task?.title || '',
     kind: (task?.kind || 'TACHE') as TaskKind,
-    assigneeIds: task?.assigneeIds || (defaults?.userId ? [defaults.userId] : []),
+    assigneeIds: task?.assigneeIds || (defaults?.userId ? [defaults.userId] : isTech ? [me.id] : []),
     date: toDateInput(baseDate.toISOString()),
     endDate: toDateInput((task ? new Date(task.end) : baseDate).toISOString()),
     startTime: task ? fmtTime(task.start) : '07:00',
@@ -69,7 +69,8 @@ export const TaskModal: React.FC<{ onClose: () => void; task?: CalendarTask; def
   const [saving, setSaving] = useState(false);
   const set = (k: string, v: any) => setF(p => ({ ...p, [k]: v }));
   const multiDay = f.kind === 'CONGE' || f.kind === 'ABSENCE' || f.kind === 'FORMATION';
-  const readOnly = !isResp;
+  const ownTask = !task || task.assigneeIds.every(x => x === me.id);
+  const readOnly = !(isResp || (isTech && canPlan && ownTask));
 
   const submit = async () => {
     setSaving(true);
@@ -94,7 +95,7 @@ export const TaskModal: React.FC<{ onClose: () => void; task?: CalendarTask; def
 
   return (
     <Modal title={task ? task.title : 'Ajouter au planning'} onClose={onClose} footer={<>
-      {task && isResp && <Button variant="danger" small icon={<Trash2 size={14} />} onClick={remove}>Supprimer</Button>}
+      {task && !readOnly && <Button variant="danger" small icon={<Trash2 size={14} />} onClick={remove}>Supprimer</Button>}
       {canToggle && <Button variant={task!.status === 'FAIT' ? 'secondary' : 'success'} small icon={<CheckCircle2 size={14} />} onClick={toggleDone}>{task!.status === 'FAIT' ? 'Marquer à faire' : 'Marquer fait'}</Button>}
       {!readOnly && <Button onClick={submit} loading={saving} disabled={!f.assigneeIds.length}>{task ? 'Enregistrer' : 'Ajouter'}</Button>}
     </>}>
@@ -102,8 +103,8 @@ export const TaskModal: React.FC<{ onClose: () => void; task?: CalendarTask; def
         <Field label="Type">
           <Segmented value={f.kind} onChange={v => set('kind', v)} options={(Object.keys(TASK_KIND_LABEL) as TaskKind[]).map(k => ({ value: k, label: TASK_KIND_LABEL[k] }))} />
         </Field>
-        <Field label="Intitulé"><Input value={f.title} onChange={e => set('title', e.target.value)} placeholder={f.kind === 'TACHE' ? 'Ex. : tournée de graissage Gadji' : TASK_KIND_LABEL[f.kind]} /></Field>
-        <Field label="Personnes" required><UserChips users={people} value={f.assigneeIds} onChange={v => set('assigneeIds', v)} /></Field>
+        <Field label="Intitulé"><Input value={f.title} onChange={e => set('title', e.target.value)} placeholder={f.kind === 'TACHE' ? 'Ex. : tournée des centrales, inventaire des consommables' : TASK_KIND_LABEL[f.kind]} /></Field>
+        {isResp && <Field label="Personnes" required><UserChips users={people} value={f.assigneeIds} onChange={v => set('assigneeIds', v)} /></Field>}
         <div className="grid grid-cols-2 gap-3">
           <Field label={multiDay ? 'Du' : 'Date'}><Input type="date" value={f.date} onChange={e => set('date', e.target.value)} /></Field>
           {multiDay && <Field label="Au"><Input type="date" value={f.endDate} min={f.date} onChange={e => set('endDate', e.target.value)} /></Field>}
@@ -163,14 +164,15 @@ const TeamGrid: React.FC<{ weekStart: Date; showWeekend: boolean; siteId: string
   const [dropTarget, setDropTarget] = useState<string | null>(null);
 
   const days = Array.from({ length: showWeekend ? 7 : 5 }, (_, i) => addDays(weekStart, i));
-  const team: GmaoUser[] = [
+  const team: GmaoUser[] = g.isTech ? [g.me] : [
     ...g.users.filter(u => u.role === 'TECHNICIEN'),
-    ...g.users.filter(u => u.role === 'RESPONSABLE' && items.some(it => itemUsers(it).includes(u.id))),
+    ...g.users.filter(u => u.role === 'RESPONSABLE' && (u.id === g.me.id || items.some(it => itemUsers(it).includes(u.id)))),
   ];
   const siteOk = (it: Item) => !siteId || (it.type === 'wo' ? it.wo.siteId === siteId : !it.task.siteId || it.task.siteId === siteId);
 
   const backlog = g.workOrders
-    .filter(w => (w.status === 'A_PLANIFIER' || (w.status === 'EN_ATTENTE' && !w.plannedStart)) && (!siteId || w.siteId === siteId))
+    .filter(w => (w.status === 'A_PLANIFIER' || (w.status === 'EN_ATTENTE' && !w.plannedStart)) && (!siteId || w.siteId === siteId)
+      && (!g.isTech || ((!w.assigneeIds.length || w.assigneeIds.every(x => x === g.me.id)) && g.mine(g.assetById(w.assetId)))))
     .sort((a, b) => a.priority.localeCompare(b.priority) || a.dueDate.localeCompare(b.dueDate));
 
   const openItem = (it: Item) => (it.type === 'wo' ? g.openWorkOrder(it.id) : setTaskModal({ task: it.task }));
@@ -257,7 +259,7 @@ const TeamGrid: React.FC<{ weekStart: Date; showWeekend: boolean; siteId: string
       <div className="xl:w-72 shrink-0">
         <Card className="p-4">
           <div className="flex items-center justify-between mb-1"><Label>À planifier</Label><Badge className="bg-blue-50 text-blue-600">{backlog.length}</Badge></div>
-          <p className="text-[11px] text-gray-400 mb-3">Glissez un bon de travail sur un technicien et un jour, ou cliquez pour le planifier.</p>
+          <p className="text-[11px] text-gray-400 mb-3">{g.isTech ? 'Glissez une intervention sur un jour de votre planning, ou cliquez pour la planifier.' : 'Glissez une intervention sur un technicien et un jour, ou cliquez pour la planifier.'}</p>
           <div className="space-y-2 max-h-[60vh] overflow-y-auto">
             {backlog.map(w => (
               <div
@@ -345,7 +347,7 @@ const MyAgenda: React.FC<{ weekStart: Date; userId: string }> = ({ weekStart, us
       })}
       {unscheduled.length > 0 && (
         <Card className="p-4">
-          <Label className="mb-2">Bons de travail attribués sans date</Label>
+          <Label className="mb-2">Interventions attribuées sans date</Label>
           {unscheduled.map(w => (
             <button key={w.id} onClick={() => g.openWorkOrder(w.id)} className="w-full text-left text-sm py-1.5 flex items-center gap-2">
               <PriorityBadge p={w.priority} /><b>{w.assetCode}</b> {w.title}
@@ -370,16 +372,16 @@ export const PlanningView: React.FC = () => {
   });
   const [showWeekend, setShowWeekend] = useState(false);
   const [siteId, setSiteId] = useState('');
-  const [mode, setMode] = useState<'equipe' | 'moi'>(g.isResp ? 'equipe' : 'moi');
+  const [mode, setMode] = useState<'equipe' | 'moi'>(g.isResp || (g.isTech && g.canPlan) ? 'equipe' : 'moi');
   const [creating, setCreating] = useState(false);
   const weekEnd = addDays(weekStart, 6);
 
   return (
     <div className="max-w-[1400px] mx-auto">
       <PageHeader
-        title={mode === 'equipe' ? 'Planning de l’équipe' : 'Mon planning'}
+        title={mode === 'equipe' && g.isResp ? 'Planning de l’équipe' : 'Mon planning'}
         subtitle={`Semaine du ${fmtShortDate(weekStart.toISOString())} au ${fmtShortDate(weekEnd.toISOString())}`}
-        actions={g.isResp ? <Button icon={<Plus size={16} />} onClick={() => setCreating(true)}>Tâche / absence</Button> : undefined}
+        actions={g.canPlan ? <Button icon={<Plus size={16} />} onClick={() => setCreating(true)}>Tâche / absence</Button> : undefined}
       />
       <div className="flex flex-wrap items-center gap-2 mb-4">
         <div className="flex items-center gap-1 bg-white border border-border rounded-2xl p-1">
@@ -387,9 +389,9 @@ export const PlanningView: React.FC = () => {
           <button onClick={() => setWeekStart(startOfWeek(new Date()))} className="px-3 py-1.5 rounded-xl text-xs font-bold hover:bg-gray-50 flex items-center gap-1"><CalendarDays size={14} />Cette semaine</button>
           <button onClick={() => setWeekStart(addDays(weekStart, 7))} className="p-2 rounded-xl hover:bg-gray-50" aria-label="Semaine suivante"><ChevronRight size={16} /></button>
         </div>
-        {g.isResp && <Segmented value={mode} onChange={setMode} options={[{ value: 'equipe', label: 'Équipe' }, { value: 'moi', label: 'Mon planning' }]} />}
+        {g.canPlan && <Segmented value={mode} onChange={setMode} options={[{ value: 'equipe', label: g.isResp ? 'Équipe' : 'Planifier' }, { value: 'moi', label: g.isResp ? 'Mon planning' : 'Ma semaine' }]} />}
         {mode === 'equipe' && <>
-          <div className="w-44"><Select value={siteId} onChange={e => setSiteId(e.target.value)}><option value="">Tous les sites</option>{g.sites.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</Select></div>
+          {g.sites.length > 1 && <div className="w-44"><Select value={siteId} onChange={e => setSiteId(e.target.value)}><option value="">Tous les sites</option>{g.sites.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</Select></div>}
           <label className="flex items-center gap-2 text-xs font-bold text-gray-500"><input type="checkbox" checked={showWeekend} onChange={e => setShowWeekend(e.target.checked)} className="accent-[#EE6E0A]" />Week-end</label>
         </>}
       </div>

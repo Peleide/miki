@@ -1,7 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   LayoutDashboard, CalendarDays, ClipboardList, Inbox, ListChecks, Boxes, QrCode, Settings, LogOut, Bell, Menu, X,
-  Wrench, Shield,
+  Wrench, Shield, ClipboardCheck,
 } from 'lucide-react';
 import { GmaoRole, GmaoUser, ROLE_LABEL } from '../../functions/src/gmao/model';
 import { GmaoBackend } from '../../services/gmao/backend';
@@ -14,33 +14,37 @@ import { PreventiveView } from './PreventiveView';
 import { PlanningView } from './PlanningView';
 import { TerrainView } from './TerrainView';
 import { SettingsView } from './SettingsView';
+import { TrackingView } from './TrackingView';
 import { Logo } from '../Logo';
 
-type View = 'accueil' | 'planning' | 'travaux' | 'demandes' | 'preventif' | 'parc' | 'terrain' | 'reglages';
+type View = 'accueil' | 'planning' | 'interventions' | 'signalements' | 'preventif' | 'parc' | 'suivi' | 'scanner' | 'reglages';
 
-const NAV: Record<View, { label: string; icon: any }> = {
-  accueil: { label: 'Tableau de bord', icon: LayoutDashboard },
-  planning: { label: 'Planning', icon: CalendarDays },
-  travaux: { label: 'Bons de travail', icon: ClipboardList },
-  demandes: { label: 'Demandes', icon: Inbox },
-  preventif: { label: 'Préventif', icon: ListChecks },
-  parc: { label: 'Parc', icon: Boxes },
-  terrain: { label: 'Terrain', icon: QrCode },
-  reglages: { label: 'Réglages', icon: Settings },
+const NAV: Record<View, { label: string; short: string; icon: any }> = {
+  accueil: { label: 'Tableau de bord', short: 'Accueil', icon: LayoutDashboard },
+  planning: { label: 'Planning', short: 'Planning', icon: CalendarDays },
+  interventions: { label: 'Interventions', short: 'Interv.', icon: ClipboardList },
+  signalements: { label: 'Signalements', short: 'Signal.', icon: Inbox },
+  preventif: { label: 'Préventif', short: 'Préventif', icon: ListChecks },
+  parc: { label: 'Parc', short: 'Parc', icon: Boxes },
+  suivi: { label: 'Suivi des maintenances', short: 'Suivi', icon: ClipboardCheck },
+  scanner: { label: 'Scanner', short: 'Scanner', icon: QrCode },
+  reglages: { label: 'Réglages', short: 'Réglages', icon: Settings },
 };
 
 const VIEWS_BY_ROLE: Record<GmaoRole, View[]> = {
-  RESPONSABLE: ['accueil', 'planning', 'travaux', 'demandes', 'preventif', 'parc', 'terrain', 'reglages'],
-  TECHNICIEN: ['planning', 'travaux', 'terrain', 'demandes', 'parc'],
-  DEMANDEUR: ['demandes', 'terrain', 'parc', 'accueil'],
+  RESPONSABLE: ['accueil', 'planning', 'interventions', 'signalements', 'parc', 'preventif', 'suivi', 'scanner', 'reglages'],
+  TECHNICIEN: ['planning', 'interventions', 'scanner', 'signalements', 'parc', 'accueil', 'preventif', 'suivi'],
+  CLIENT: ['accueil', 'parc', 'scanner', 'suivi', 'signalements'],
 };
+const CLIENT_LABEL: Partial<Record<View, string>> = { accueil: 'Accueil', parc: 'Vos machines' };
 
 export interface ShellProps {
   backend: GmaoBackend;
   me: GmaoUser;
-  orgName: string;
   onLogout: () => void;
   headerExtra?: React.ReactNode;
+  /** Jeton QR à ouvrir au démarrage (lien /q/… ouvert par un compte connecté). */
+  openToken?: string | null;
 }
 
 const NotificationsBell: React.FC = () => {
@@ -56,7 +60,7 @@ const NotificationsBell: React.FC = () => {
       </button>
       {open && <>
         <div className="fixed inset-0 z-[410]" onClick={() => setOpen(false)} />
-        <div className="absolute right-0 top-12 w-[320px] bg-white border border-border shadow-2xl rounded-3xl overflow-hidden z-[420]">
+        <div className="absolute right-0 top-12 w-[320px] max-w-[calc(100vw-24px)] bg-white border border-border shadow-2xl rounded-3xl overflow-hidden z-[420]">
           <div className="px-5 py-3 flex justify-between items-center border-b border-border">
             <span className="text-[10px] font-black uppercase tracking-widest text-gray-400">Notifications</span>
             {unread > 0 && <button onClick={() => backend.markAllNotificationsRead(me.id)} className="text-[10px] font-black uppercase tracking-widest text-primary">Tout lire</button>}
@@ -81,12 +85,23 @@ const NotificationsBell: React.FC = () => {
   );
 };
 
-const Body: React.FC<{ view: View; setView: (v: View) => void; views: View[] } & ShellProps> = ({ view, setView, views, me, orgName, onLogout, headerExtra }) => {
-  const { requests, workOrders, isResp } = useGmao();
+const Body: React.FC<{ view: View; setView: (v: View) => void; views: View[] } & ShellProps> = ({ view, setView, views, me, onLogout, headerExtra, openToken }) => {
+  const g = useGmao();
   const [moreOpen, setMoreOpen] = useState(false);
+  const opened = useRef(false);
+  useEffect(() => {
+    if (!openToken || opened.current || g.loading) return;
+    opened.current = true;
+    const a = g.assets.find(x => x.qrToken === openToken);
+    if (a) g.openAsset(a.id);
+    else g.toast('Cette machine ne fait pas partie de votre parc.', 'info');
+  }, [openToken, g.loading, g.assets]);
+
+  const label = (v: View) => (me.role === 'CLIENT' && CLIENT_LABEL[v]) || NAV[v].label;
+  const pending = g.requests.filter(r => r.status === 'A_TRAITER' && (!g.isTech || g.mine(g.assetById(r.assetId)))).length;
   const badge: Partial<Record<View, number>> = {
-    demandes: isResp ? requests.filter(r => r.status === 'A_APPROUVER').length : 0,
-    travaux: me.role === 'TECHNICIEN' ? workOrders.filter(w => w.assigneeIds.includes(me.id) && ['PLANIFIE', 'EN_COURS'].includes(w.status)).length : 0,
+    signalements: g.isClient ? 0 : pending,
+    interventions: g.isTech ? g.workOrders.filter(w => w.assigneeIds.includes(me.id) && ['A_PLANIFIER', 'PLANIFIE', 'EN_COURS'].includes(w.status)).length : 0,
   };
   const mobileMain = views.slice(0, 4);
   const mobileMore = views.slice(4);
@@ -95,14 +110,14 @@ const Body: React.FC<{ view: View; setView: (v: View) => void; views: View[] } &
     const Icon = NAV[v].icon;
     const active = view === v;
     return vertical ? (
-      <button onClick={() => setView(v)} className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-2xl text-sm font-bold transition-all ${active ? 'bg-primary text-white shadow-sm shadow-primary/30' : 'text-gray-500 hover:bg-gray-50 hover:text-dark'}`}>
-        <Icon size={18} />{NAV[v].label}
+      <button onClick={() => { setView(v); setMoreOpen(false); }} className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-2xl text-sm font-bold text-left transition-all ${active ? 'bg-primary text-white shadow-sm shadow-primary/30' : 'text-gray-500 hover:bg-gray-50 hover:text-dark'}`}>
+        <Icon size={18} />{label(v)}
         {!!badge[v] && <span className={`ml-auto text-[10px] font-black px-1.5 rounded-md ${active ? 'bg-white/25' : 'bg-danger text-white'}`}>{badge[v]}</span>}
       </button>
     ) : (
       <button onClick={() => { setView(v); setMoreOpen(false); }} className={`relative flex flex-col items-center justify-center flex-1 py-2 gap-1 text-[9px] font-black uppercase tracking-wider ${active ? 'text-primary' : 'text-gray-400'}`}>
         <Icon size={20} strokeWidth={active ? 2.5 : 2} />
-        <span className="leading-none">{NAV[v].label.split(' ')[0]}</span>
+        <span className="leading-none">{me.role === 'CLIENT' && v === 'parc' ? 'Machines' : NAV[v].short}</span>
         {!!badge[v] && <span className="absolute top-1 right-[calc(50%-18px)] min-w-[14px] h-[14px] px-0.5 rounded-full bg-danger text-white text-[8px] flex items-center justify-center">{badge[v]}</span>}
       </button>
     );
@@ -114,8 +129,8 @@ const Body: React.FC<{ view: View; setView: (v: View) => void; views: View[] } &
         <div className="flex items-center gap-3 min-w-0">
           <Logo className="h-8" showText={false} />
           <div className="border-l border-border pl-3 min-w-0">
-            <div className="text-sm font-black text-dark truncate">{orgName}</div>
-            <div className="text-[10px] font-bold uppercase tracking-widest text-gray-400 truncate">{me.name} · {ROLE_LABEL[me.role]}</div>
+            <div className="text-sm font-black text-dark truncate">{g.tenantName || 'Maintenance'}</div>
+            <div className="text-[10px] font-bold uppercase tracking-widest text-gray-400 truncate">{me.name} · {ROLE_LABEL[me.role]}{me.role === 'CLIENT' && me.clientId ? ` · ${g.clientName(me.clientId)}` : ''}</div>
           </div>
         </div>
         <div className="flex items-center gap-1">
@@ -131,11 +146,12 @@ const Body: React.FC<{ view: View; setView: (v: View) => void; views: View[] } &
         <main className="flex-1 overflow-y-auto overflow-x-hidden px-4 lg:px-8 py-6 pb-28 lg:pb-10">
           {view === 'accueil' && <DashboardView />}
           {view === 'planning' && <PlanningView />}
-          {view === 'travaux' && <WorkOrdersView />}
-          {view === 'demandes' && <RequestsView />}
+          {view === 'interventions' && <WorkOrdersView />}
+          {view === 'signalements' && <RequestsView />}
           {view === 'preventif' && <PreventiveView />}
           {view === 'parc' && <AssetsView />}
-          {view === 'terrain' && <TerrainView />}
+          {view === 'suivi' && <TrackingView />}
+          {view === 'scanner' && <TerrainView />}
           {view === 'reglages' && <SettingsView />}
         </main>
       </div>
@@ -171,7 +187,9 @@ export const GmaoShell: React.FC<ShellProps> = (props) => {
   useEffect(() => { if (!views.includes(view)) setViewState(views[0]); }, [props.me.role]);
 
   const setView = (v: View) => {
+    if (!views.includes(v)) return;
     setViewState(v);
+    setModal(null);
     try { localStorage.setItem(storageKey, v); } catch { /* ignoré */ }
   };
 

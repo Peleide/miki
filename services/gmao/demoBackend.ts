@@ -1,19 +1,19 @@
 // Mode démo : toute la GMAO tourne dans le navigateur, sans Firebase.
 // La logique métier exécutée est exactement celle des Cloud Functions (functions/src/gmao/core.ts).
-import { Actor, Ctx, handleGmaoAction, runPreventiveScan } from '../../functions/src/gmao/core';
+import { Actor, Ctx, handleGmaoAction, handlePublicAction, runPreventiveScan } from '../../functions/src/gmao/core';
 import { memoryStore, emptyState, MemoryState } from '../../functions/src/gmao/memoryStore';
-import { seedCspDemo } from '../../functions/src/gmao/seed';
-import { CollName, GmaoNotification, GmaoUser } from '../../functions/src/gmao/model';
-import { GmaoBackend, compressImage } from './backend';
+import { seedDemo } from '../../functions/src/gmao/seed';
+import { CLIENT_SCOPED, COLL, CollName, GmaoNotification, GmaoUser, SHARED_COLLS, planOf, withDefaults } from '../../functions/src/gmao/model';
+import { GmaoBackend, PublicBackend, compressImage } from './backend';
 
-const STORAGE_KEY = 'miki_gmao_demo_v1';
+const STORAGE_KEY = 'miki_gmao_demo_v2';
+export const DEMO_ORG = 'Démo Services NC';
 
-export const DEMO_USERS: GmaoUser[] = [
+const BASE_USERS: GmaoUser[] = [
   { id: 'demo-resp', name: 'Alex Martin', role: 'RESPONSABLE' },
   { id: 'demo-tech1', name: 'Tom Leroy', role: 'TECHNICIEN' },
   { id: 'demo-tech2', name: 'Yann Kaipo', role: 'TECHNICIEN' },
-  { id: 'demo-tech3', name: 'Rémi Hnace', role: 'TECHNICIEN' },
-  { id: 'demo-dem', name: 'Léa Morel', role: 'DEMANDEUR' },
+  { id: 'demo-client', name: 'Léa Morel', role: 'CLIENT', clientId: null },
 ];
 
 interface DemoState extends MemoryState {
@@ -32,6 +32,8 @@ class DemoEngine {
     this.ready = this.load();
   }
 
+  get users(): GmaoUser[] { return this.state?.users || BASE_USERS; }
+
   private async load() {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
@@ -45,15 +47,11 @@ class DemoEngine {
   }
 
   async reset(notify = true) {
-    const base = emptyState(DEMO_USERS) as DemoState;
+    const base = emptyState(JSON.parse(JSON.stringify(BASE_USERS)), planOf('PRO'), DEMO_ORG) as DemoState;
     base.notifications = {};
     base.seededAt = new Date().toISOString();
     const store = memoryStore(base);
-    await seedCspDemo(store, {
-      responsable: DEMO_USERS[0],
-      techniciens: DEMO_USERS.slice(1, 4),
-      demandeur: DEMO_USERS[4],
-    });
+    await seedDemo(store, { responsable: base.users[0], techniciens: [base.users[1], base.users[2]], client: base.users[3] }, new Date(), cid => { base.users[3].clientId = cid; });
     this.state = base;
     this.persist();
     if (notify) this.emitAll();
@@ -96,7 +94,7 @@ class DemoEngine {
       this.emit(`notif:${userId}`);
     };
     for (const e of ctx.effects) {
-      if (e.type === 'notifyManagers') DEMO_USERS.filter(u => u.role === 'RESPONSABLE' && u.id !== ctx.actor.id).forEach(u => push(u.id, e.title, e.message, e.level));
+      if (e.type === 'notifyManagers') this.users.filter(u => u.role === 'RESPONSABLE' && u.id !== ctx.actor.id).forEach(u => push(u.id, e.title, e.message, e.level));
       if (e.type === 'notifyUser') push(e.userId, e.title, e.message, e.level);
     }
   }
@@ -110,9 +108,17 @@ export function getDemoEngine() {
 
 export function demoBackend(actor: Actor): GmaoBackend {
   const eng = getDemoEngine();
+  const isClient = actor.role === 'CLIENT';
+  const visible = (coll: CollName, docs: any[]) => {
+    if (!isClient) return docs;
+    if (CLIENT_SCOPED.includes(coll)) return docs.filter(d => d.clientId && d.clientId === actor.clientId);
+    if (coll === COLL.clients) return docs.filter(d => d.id === actor.clientId);
+    if (SHARED_COLLS.includes(coll)) return docs;
+    return [];
+  };
   return {
     mode: 'demo',
-    tenantId: 'demo-csp',
+    tenantId: 'demo',
     async call(action, payload) {
       await eng.ready;
       const ctx: Ctx = { store: eng.store(), actor, now: new Date(), effects: [] };
@@ -123,13 +129,13 @@ export function demoBackend(actor: Actor): GmaoBackend {
     },
     subscribe(coll: CollName, cb) {
       let active = true;
-      const push = () => { if (active) cb(Object.values(eng.state.collections[coll] || {}).map(v => ({ ...v })) as any); };
+      const push = () => { if (active) cb(visible(coll, Object.values(eng.state.collections[coll] || {}).map(v => ({ ...v }))) as any); };
       eng.ready.then(push);
       const off = eng.on(coll, push);
       return () => { active = false; off(); };
     },
-    subscribeSettings(cb) {
-      const push = () => cb({ ...eng.state.settings });
+    subscribeTenant(cb) {
+      const push = () => cb({ name: eng.state.tenantName, plan: eng.state.plan, settings: withDefaults(eng.state.settings) });
       eng.ready.then(push);
       return eng.on('settings', push);
     },
@@ -146,7 +152,7 @@ export function demoBackend(actor: Actor): GmaoBackend {
       (eng.state.notifications[userId] || []).forEach(n => { n.read = true; });
       eng.persist(); eng.emit(`notif:${userId}`);
     },
-    async listUsers() { return DEMO_USERS; },
+    async listUsers() { await eng.ready; return isClient ? eng.users.filter(u => u.id === actor.id) : eng.users; },
     async upload(_folder, file) {
       if (file.type.startsWith('image/')) {
         const blob = await compressImage(file, 900, 0.65);
@@ -159,5 +165,37 @@ export function demoBackend(actor: Actor): GmaoBackend {
       // Documents (PDF…) : conservés le temps de la session uniquement
       return URL.createObjectURL(file);
     },
+    publicOrigin: () => window.location.origin,
+    accounts: {
+      async list() {
+        await eng.ready;
+        return eng.users.map(u => ({ id: u.id, name: u.name, email: `${u.name.split(' ')[0].toLowerCase()}@demo.miki.nc`, role: u.role, clientId: u.clientId || null, isDisabled: false }));
+      },
+      async create() { throw new Error('Mode démo : les comptes sont fictifs, changez de profil en haut de l’écran.'); },
+      async resetPassword() { throw new Error('Mode démo : pas de mot de passe.'); },
+      async setDisabled() { throw new Error('Mode démo : comptes fictifs.'); },
+    },
   };
+}
+
+export function demoPublicBackend(): PublicBackend {
+  const eng = getDemoEngine();
+  const run = async (action: string, payload: any) => {
+    await eng.ready;
+    const ctx: Ctx = { store: eng.store(), actor: { id: 'public', name: String(payload?.name || 'Anonyme'), role: 'CLIENT', clientId: null }, now: new Date(), effects: [] };
+    const res = await handlePublicAction(ctx, action, payload);
+    eng.applyEffects(ctx);
+    eng.persist();
+    return res;
+  };
+  return {
+    info: token => run('INFO', { token }),
+    report: (token, payload) => run('REPORT', { ...payload, token }),
+  };
+}
+
+export async function demoUsers(): Promise<GmaoUser[]> {
+  const eng = getDemoEngine();
+  await eng.ready;
+  return eng.users;
 }

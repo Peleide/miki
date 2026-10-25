@@ -3,6 +3,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { User, Tenant, UserRole, AuditLog } from '../types';
 import { db, TimeUtils } from '../services/db';
 import { useDialog } from '../hooks/useDialog';
+import { GmaoAdminPanel } from './gmao/GmaoAdminPanel';
 import { Search, Edit2, RefreshCw, X, PlayCircle, PauseCircle, ShieldCheck, UserMinus, UserPlus, Building2, Users2, Activity, History, Shield, Lock, Home, User as UserIcon, Settings, Database, Server, Trash2, AlertTriangle, Image as ImageIcon, Wrench, ChevronDown, Filter } from 'lucide-react';
 
 interface AdminPanelProps {
@@ -376,6 +377,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
                   </form>
                 </div>
             </div>
+
+            <GmaoAdminPanel tenants={tenants} onChanged={refreshData} toast={toast} />
 
             <div className="bg-white rounded-[40px] border border-border shadow-sm overflow-x-auto no-scrollbar floating-light">
                 <table className="w-full text-sm text-left min-w-[700px]">

@@ -226,7 +226,8 @@ class DatabaseService {
       mustChangePassword: data.mustChangePassword, tenantsAccess, 
       accessibleTenantIds: data.accessibleTenantIds || [],
       tenantId: activeTenantId, role: activeRole,
-      activeSessionId: data.activeSessionId || null, activeEquipmentId: data.activeEquipmentId || null
+      activeSessionId: data.activeSessionId || null, activeEquipmentId: data.activeEquipmentId || null,
+      gmaoClientIds: data.gmaoClientIds || {},
     } as User;
   }
 

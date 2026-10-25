@@ -145,6 +145,8 @@ export interface User {
   tenantsAccess: { [tenantId: string]: UserRole };
   accessibleTenantIds: string[];
   assignedSiteIds?: string[];
+  /** GMAO : organisation cliente rattachée, par tenant (comptes clients). */
+  gmaoClientIds?: { [tenantId: string]: string };
 
   isArchived: boolean;
   isDisabled: boolean; 

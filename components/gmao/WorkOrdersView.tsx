@@ -1,40 +1,55 @@
 import React, { useMemo, useState } from 'react';
-import { Plus, Play, CheckCircle2, PauseCircle, XCircle, CalendarClock, Pencil, ShieldCheck, Download, ClipboardList, AlertTriangle, Undo2 } from 'lucide-react';
+import { Plus, Play, CheckCircle2, PauseCircle, XCircle, CalendarClock, Pencil, ShieldCheck, ClipboardList, AlertTriangle, Undo2, Phone, ClipboardCheck } from 'lucide-react';
 import {
-  AssetState, ChecklistAnswers, INTERVENTION_TYPES, OPEN_WORK_ORDER_STATUSES, PRIORITIES, PRIORITY_LABEL,
-  WorkOrder, WorkOrderStatus, WORK_ORDER_STATUS_LABEL, METER_UNIT, STATE_LABEL,
+  Asset, AssetState, ChecklistAnswers, KIND_LABEL, OPEN_WORK_ORDER_STATUSES, PRIORITIES, WorkOrder, WorkOrderStatus,
+  METER_UNIT, STATE_LABEL, priorityLabel,
 } from '../../functions/src/gmao/model';
-import { hoursBetween, workOrderCost } from '../../functions/src/gmao/rules';
+import { inPerimeter } from '../../functions/src/gmao/rules';
 import { useGmao } from './GmaoContext';
 import {
-  AssetPicker, Badge, Button, Card, ChecklistAnswersView, ChecklistForm, downloadCsv, Empty, Field, fmtDate,
-  fmtDateTime, fmtNum, fmtTime, fmtXpf, fromLocalInput, Info, Input, Label, Modal, PageHeader, PhotoInput,
+  AssetPicker, Badge, Button, Card, ChecklistAnswersView, ChecklistForm, Empty, Field, fmtDate,
+  fmtDateTime, fmtNum, fmtTime, fromLocalInput, Info, Input, Label, Modal, PageHeader, PhotoInput,
   PhotoStrip, PriorityBadge, Segmented, Select, Textarea, toLocalInput, UserChips, WoStatusBadge, relativeDays,
-  fromDateInput, toDateInput,
+  fromDateInput, toDateInput, telHref,
 } from './ui';
 
-const typeLabel = (c?: string) => INTERVENTION_TYPES.find(t => t.code === c)?.label || c || '—';
 export const isLate = (w: WorkOrder) => OPEN_WORK_ORDER_STATUSES.includes(w.status) && new Date(w.dueDate).getTime() < Date.now();
+
+/** Peut-on démarrer / réaliser cette intervention ? */
+export function useCanExecute() {
+  const g = useGmao();
+  return (wo: WorkOrder) => g.isResp || (g.isTech && (wo.assigneeIds.includes(g.me.id) || (!wo.assigneeIds.length && inPerimeter(g.assetById(wo.assetId), g.me.id))));
+}
+
+const ContactLine: React.FC<{ asset?: Asset }> = ({ asset }) => (asset?.contactName || asset?.contactPhone) ? (
+  <div className="rounded-2xl bg-blue-50 text-blue-800 text-sm px-4 py-3 flex flex-wrap items-center gap-2">
+    <Phone size={16} className="shrink-0" />
+    <span>Référent : <b>{asset.contactName || '—'}</b></span>
+    {asset.contactPhone && <a href={telHref(asset.contactPhone)} className="ml-auto font-black underline">{asset.contactPhone}</a>}
+  </div>
+) : null;
 
 // ─── Création / modification ─────────────────────────────────────────────────
 
 export const WorkOrderFormModal: React.FC<{ onClose: () => void; assetId?: string; edit?: WorkOrder }> = ({ onClose, assetId: initialAsset, edit }) => {
-  const { assets, siteName, run, checklists, settings, openWorkOrder } = useGmao();
+  const g = useGmao();
   const [assetId, setAssetId] = useState(edit?.assetId || initialAsset || '');
+  const asset = g.assetById(assetId);
   const [f, setF] = useState({
     kind: edit?.kind || 'CORRECTIF',
     title: edit?.title || '',
     description: edit?.description || '',
     priority: edit?.priority || 'P3',
-    interventionType: edit?.interventionType || 'MECANIQUE',
+    interventionType: edit?.interventionType || g.settings.interventionTypes[0],
     procedure: edit?.procedure || '',
     checklistId: edit?.checklistId || '',
-    safetyCheckRequired: edit ? edit.safetyCheckRequired : !!settings.safetyChecklistId,
+    safetyCheckRequired: edit ? edit.safetyCheckRequired : !!g.settings.safetyChecklistId,
     estimatedHours: edit?.estimatedHours ?? '',
     resourceType: edit?.resourceType || 'INTERNE',
     externalProvider: edit?.externalProvider || '',
     dueDate: edit ? toDateInput(edit.dueDate) : '',
   });
+  const [assigneeIds, setAssigneeIds] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const set = (k: string, v: any) => setF(prev => ({ ...prev, [k]: v }));
 
@@ -42,58 +57,49 @@ export const WorkOrderFormModal: React.FC<{ onClose: () => void; assetId?: strin
     setSaving(true);
     const payload = { ...f, checklistId: f.checklistId || null, dueDate: f.dueDate ? fromDateInput(f.dueDate, 17) : undefined };
     const res = edit
-      ? await run('WO_UPDATE', { id: edit.id, updates: payload }, 'Bon de travail mis à jour.')
-      : await run('WO_CREATE', { ...payload, assetId }, 'Bon de travail créé.');
+      ? await g.run('WO_UPDATE', { id: edit.id, updates: payload }, 'Intervention mise à jour.')
+      : await g.run('WO_CREATE', { ...payload, assetId, assigneeIds }, 'Intervention créée.');
     setSaving(false);
-    if (res) { onClose(); if (!edit && res.id) openWorkOrder(res.id); }
+    if (res) { onClose(); if (!edit && res.id) g.openWorkOrder(res.id); }
   };
 
   return (
-    <Modal title={edit ? `Modifier ${edit.number}` : 'Nouveau bon de travail'} onClose={onClose} wide footer={<>
+    <Modal title={edit ? `Modifier ${edit.number}` : 'Nouvelle intervention'} onClose={onClose} wide footer={<>
       <Button variant="ghost" onClick={onClose}>Annuler</Button>
-      <Button onClick={submit} loading={saving} disabled={!assetId || !f.title.trim()}>{edit ? 'Enregistrer' : 'Créer le bon de travail'}</Button>
+      <Button onClick={submit} loading={saving} disabled={!assetId || !f.title.trim()}>{edit ? 'Enregistrer' : 'Créer l’intervention'}</Button>
     </>}>
       {!edit && (
         <>
-          <Field label="Équipement" required><AssetPicker assets={assets} value={assetId} onChange={setAssetId} siteName={siteName} /></Field>
-          <Field label="Nature"><Segmented value={f.kind as any} onChange={v => set('kind', v)} options={[{ value: 'CORRECTIF', label: 'Correctif' }, { value: 'PREVENTIF', label: 'Préventif (ponctuel)' }]} /></Field>
+          <Field label="Machine" required><AssetPicker assets={g.assets.filter(a => g.mine(a))} value={assetId} onChange={setAssetId} siteName={g.siteName} /></Field>
+          <Field label="Nature"><Segmented value={f.kind as any} onChange={v => set('kind', v)} options={[{ value: 'CORRECTIF', label: 'Curatif' }, { value: 'PREVENTIF', label: 'Préventif (ponctuel)' }]} /></Field>
         </>
       )}
       <Field label="Intitulé" required><Input value={f.title} onChange={e => set('title', e.target.value)} /></Field>
       <Field label="Description"><Textarea value={f.description} onChange={e => set('description', e.target.value)} /></Field>
       <div className="grid sm:grid-cols-3 gap-3">
-        <Field label="Priorité">
-          <Select value={f.priority} onChange={e => set('priority', e.target.value)}>{PRIORITIES.map(p => <option key={p} value={p}>{PRIORITY_LABEL[p]}</option>)}</Select>
-        </Field>
-        <Field label="Type d'intervention">
-          <Select value={f.interventionType} onChange={e => set('interventionType', e.target.value)}>{INTERVENTION_TYPES.map(t => <option key={t.code} value={t.code}>{t.label}</option>)}</Select>
-        </Field>
-        <Field label="Échéance" hint="Vide : selon la priorité.">
-          <Input type="date" value={f.dueDate} onChange={e => set('dueDate', e.target.value)} />
-        </Field>
+        <Field label="Priorité"><Select value={f.priority} onChange={e => set('priority', e.target.value)}>{PRIORITIES.map(p => <option key={p} value={p}>{priorityLabel(p, g.settings.priorityDelays)}</option>)}</Select></Field>
+        <Field label="Type d'intervention"><Select value={f.interventionType} onChange={e => set('interventionType', e.target.value)}>{Array.from(new Set([...g.settings.interventionTypes, f.interventionType])).map(t => <option key={t} value={t}>{t}</option>)}</Select></Field>
+        <Field label="Échéance" hint="Vide : selon la priorité."><Input type="date" value={f.dueDate} onChange={e => set('dueDate', e.target.value)} /></Field>
       </div>
-      <Field label="Mode opératoire" hint="Étapes, consignes de sécurité, outillage. Indicateur « interventions sans mode opératoire ».">
-        <Textarea rows={4} value={f.procedure} onChange={e => set('procedure', e.target.value)} />
-      </Field>
+      <Field label="Mode opératoire" hint="Étapes, consignes, outillage."><Textarea rows={3} value={f.procedure} onChange={e => set('procedure', e.target.value)} /></Field>
       <div className="grid sm:grid-cols-2 gap-3">
         <Field label="Check-list à la clôture">
           <Select value={f.checklistId} onChange={e => set('checklistId', e.target.value)}>
             <option value="">Aucune</option>
-            {checklists.filter(c => c.kind === 'MAINTENANCE').map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+            {g.checklists.filter(c => c.kind === 'MAINTENANCE').map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
           </Select>
         </Field>
         <Field label="Durée estimée (h)"><Input type="number" min={0} step={0.5} value={f.estimatedHours as any} onChange={e => set('estimatedHours', e.target.value)} /></Field>
       </div>
       <div className="grid sm:grid-cols-2 gap-3">
-        <Field label="Ressource">
-          <Segmented value={f.resourceType as any} onChange={v => set('resourceType', v)} options={[{ value: 'INTERNE', label: 'Interne' }, { value: 'EXTERNE', label: 'Prestataire' }]} />
-        </Field>
+        <Field label="Réalisée par"><Segmented value={f.resourceType as any} onChange={v => set('resourceType', v)} options={[{ value: 'INTERNE', label: 'Équipe' }, { value: 'EXTERNE', label: 'Prestataire / garage' }]} /></Field>
         {f.resourceType === 'EXTERNE' && <Field label="Prestataire"><Input value={f.externalProvider} onChange={e => set('externalProvider', e.target.value)} /></Field>}
       </div>
-      {settings.safetyChecklistId && (
+      {!edit && g.isResp && <Field label="Attribuer à" hint="Vide : le technicien du parc de la machine s’il est seul."><UserChips users={g.users.filter(u => u.role === 'TECHNICIEN' && (!asset?.technicianIds?.length || asset.technicianIds.includes(u.id)))} value={assigneeIds} onChange={setAssigneeIds} /></Field>}
+      {g.settings.safetyChecklistId && (
         <label className="flex items-center gap-2 text-sm font-semibold text-dark">
           <input type="checkbox" checked={f.safetyCheckRequired} onChange={e => set('safetyCheckRequired', e.target.checked)} className="w-4 h-4 accent-[#EE6E0A]" />
-          Take 5 obligatoire avant de démarrer
+          Analyse de sécurité obligatoire avant de démarrer
         </label>
       )}
     </Modal>
@@ -103,20 +109,21 @@ export const WorkOrderFormModal: React.FC<{ onClose: () => void; assetId?: strin
 // ─── Planification ───────────────────────────────────────────────────────────
 
 export const PlanModal: React.FC<{ wo: WorkOrder; onClose: () => void; defaults?: { start?: string; end?: string; assigneeIds?: string[] } }> = ({ wo, onClose, defaults }) => {
-  const { users, run } = useGmao();
-  const techs = users.filter(u => u.role !== 'DEMANDEUR');
+  const { users, run, isTech, me } = useGmao();
+  const asset = useGmao().assetById(wo.assetId);
+  const techs = users.filter(u => u.role !== 'CLIENT');
   const defaultStart = defaults?.start || wo.plannedStart || (() => { const d = new Date(); do { d.setDate(d.getDate() + 1); } while (d.getDay() === 0 || d.getDay() === 6); d.setHours(7, 0, 0, 0); return d.toISOString(); })();
   const defaultEnd = defaults?.end || wo.plannedEnd || new Date(new Date(defaultStart).getTime() + Math.max(1, wo.estimatedHours || 2) * 3600000).toISOString();
   const [start, setStart] = useState(toLocalInput(defaultStart));
   const [end, setEnd] = useState(toLocalInput(defaultEnd));
-  const [assigneeIds, setAssigneeIds] = useState<string[]>(defaults?.assigneeIds || wo.assigneeIds || []);
+  const [assigneeIds, setAssigneeIds] = useState<string[]>(isTech ? [me.id] : (defaults?.assigneeIds || wo.assigneeIds || []));
   const [resourceType, setResourceType] = useState(wo.resourceType);
   const [externalProvider, setExternalProvider] = useState(wo.externalProvider || '');
   const [saving, setSaving] = useState(false);
 
   const submit = async () => {
     setSaving(true);
-    const res = await run('WO_PLAN', { id: wo.id, plannedStart: fromLocalInput(start), plannedEnd: fromLocalInput(end), assigneeIds, resourceType, externalProvider }, 'Bon de travail planifié.');
+    const res = await run('WO_PLAN', { id: wo.id, plannedStart: fromLocalInput(start), plannedEnd: fromLocalInput(end), assigneeIds, resourceType, externalProvider }, 'Intervention planifiée.');
     setSaving(false);
     if (res) onClose();
   };
@@ -126,13 +133,14 @@ export const PlanModal: React.FC<{ wo: WorkOrder; onClose: () => void; defaults?
       <Button variant="ghost" onClick={onClose}>Annuler</Button>
       <Button onClick={submit} loading={saving} icon={<CalendarClock size={16} />}>Planifier</Button>
     </>}>
-      <Field label="Ressource">
-        <Segmented value={resourceType} onChange={setResourceType} options={[{ value: 'INTERNE', label: 'Équipe interne' }, { value: 'EXTERNE', label: 'Prestataire' }]} />
-      </Field>
+      <ContactLine asset={asset} />
+      {!isTech && <Field label="Réalisée par"><Segmented value={resourceType} onChange={setResourceType} options={[{ value: 'INTERNE', label: 'Équipe' }, { value: 'EXTERNE', label: 'Prestataire / garage' }]} /></Field>}
       {resourceType === 'EXTERNE' && <Field label="Prestataire" required><Input value={externalProvider} onChange={e => setExternalProvider(e.target.value)} /></Field>}
-      <Field label={resourceType === 'INTERNE' ? 'Techniciens' : 'Suivi interne (facultatif)'} required={resourceType === 'INTERNE'}>
-        <UserChips users={techs} value={assigneeIds} onChange={setAssigneeIds} />
-      </Field>
+      {!isTech && (
+        <Field label={resourceType === 'INTERNE' ? 'Techniciens' : 'Suivi interne (facultatif)'} required={resourceType === 'INTERNE'}>
+          <UserChips users={techs} value={assigneeIds} onChange={setAssigneeIds} />
+        </Field>
+      )}
       <div className="grid grid-cols-2 gap-3">
         <Field label="Début"><Input type="datetime-local" value={start} onChange={e => setStart(e.target.value)} /></Field>
         <Field label="Fin"><Input type="datetime-local" value={end} onChange={e => setEnd(e.target.value)} /></Field>
@@ -142,131 +150,163 @@ export const PlanModal: React.FC<{ wo: WorkOrder; onClose: () => void; defaults?
   );
 };
 
-// ─── Démarrage (Take 5) ──────────────────────────────────────────────────────
+// ─── Analyse de sécurité ─────────────────────────────────────────────────────
+
+const SafetyBlock: React.FC<{ wo: { id?: string; safetyCheckRequired: boolean }; answers: ChecklistAnswers; onChange: (a: ChecklistAnswers) => void }> = ({ wo, answers, onChange }) => {
+  const { settings, checklists, backend } = useGmao();
+  const safety = wo.safetyCheckRequired ? checklists.find(c => c.id === settings.safetyChecklistId) : undefined;
+  if (!safety) return null;
+  const blocked = safety.items.some(i => i.type === 'BOOLEAN' && i.required && answers[i.id]?.value === false);
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center gap-2 text-sm font-black text-dark"><ShieldCheck size={18} className="text-primary" />{safety.name}</div>
+      <ChecklistForm checklist={safety} value={answers} onChange={onChange} upload={f => backend.upload(`workOrders/${wo.id || 'new'}`, f)} safety />
+      {blocked && <div className="rounded-2xl bg-danger/10 text-danger text-sm font-bold p-3 flex gap-2"><AlertTriangle size={18} className="shrink-0" />Un point de sécurité n'est pas validé : n’intervenez pas, prévenez le responsable.</div>}
+    </div>
+  );
+};
+const safetyBlocked = (g: ReturnType<typeof useGmao>, required: boolean, answers: ChecklistAnswers) => {
+  const safety = required ? g.checklists.find(c => c.id === g.settings.safetyChecklistId) : undefined;
+  return !!safety?.items.some(i => i.type === 'BOOLEAN' && i.required && answers[i.id]?.value === false);
+};
 
 const StartModal: React.FC<{ wo: WorkOrder; onClose: () => void }> = ({ wo, onClose }) => {
-  const { settings, checklists, run, backend } = useGmao();
-  const safety = wo.safetyCheckRequired ? checklists.find(c => c.id === settings.safetyChecklistId) : undefined;
+  const g = useGmao();
   const [answers, setAnswers] = useState<ChecklistAnswers>({});
   const [immobilize, setImmobilize] = useState(false);
   const [saving, setSaving] = useState(false);
-  const blocked = safety?.items.some(i => i.type === 'BOOLEAN' && i.required && answers[i.id]?.value === false);
-
   const submit = async () => {
     setSaving(true);
-    const res = await run('WO_START', { id: wo.id, safetyAnswers: safety ? answers : undefined, immobilize }, 'Intervention démarrée.');
+    const res = await g.run('WO_START', { id: wo.id, safetyAnswers: answers, immobilize }, 'Intervention démarrée.');
     setSaving(false);
     if (res) onClose();
   };
-
   return (
     <Modal title={`Démarrer ${wo.number}`} subtitle={`${wo.assetCode} · ${wo.title}`} onClose={onClose} footer={<>
       <Button variant="ghost" onClick={onClose}>Annuler</Button>
-      <Button onClick={submit} loading={saving} disabled={!!blocked} icon={<Play size={16} />}>Démarrer l'intervention</Button>
+      <Button onClick={submit} loading={saving} disabled={safetyBlocked(g, wo.safetyCheckRequired, answers)} icon={<Play size={16} />}>Démarrer</Button>
     </>}>
-      {wo.procedure && (
-        <div className="rounded-2xl bg-gray-50 p-4">
-          <Label className="mb-1">Mode opératoire</Label>
-          <p className="text-sm whitespace-pre-wrap text-dark">{wo.procedure}</p>
-        </div>
-      )}
-      {safety ? (
-        <>
-          <div className="flex items-center gap-2 text-sm font-black text-dark"><ShieldCheck size={18} className="text-primary" />{safety.name}</div>
-          <ChecklistForm checklist={safety} value={answers} onChange={setAnswers} upload={f => backend.upload(`workOrders/${wo.id}`, f)} safety />
-          {blocked && (
-            <div className="rounded-2xl bg-danger/10 text-danger text-sm font-bold p-3 flex gap-2"><AlertTriangle size={18} className="shrink-0" />Un point de sécurité n'est pas validé : ne démarrez pas, prévenez le responsable.</div>
-          )}
-        </>
-      ) : <p className="text-sm text-gray-500">Pas d'analyse de sécurité exigée pour ce bon de travail.</p>}
+      {wo.procedure && <div className="rounded-2xl bg-gray-50 p-4"><Label className="mb-1">Mode opératoire</Label><p className="text-sm whitespace-pre-wrap text-dark">{wo.procedure}</p></div>}
+      <SafetyBlock wo={wo} answers={answers} onChange={setAnswers} />
       <label className="flex items-center gap-2 text-sm font-semibold text-dark">
         <input type="checkbox" checked={immobilize} onChange={e => setImmobilize(e.target.checked)} className="w-4 h-4 accent-[#EE6E0A]" />
-        Immobiliser la machine pendant l'intervention (état « indisponible »)
+        Immobiliser la machine pendant l'intervention (« à l’arrêt »)
       </label>
     </Modal>
   );
 };
 
-// ─── Clôture ─────────────────────────────────────────────────────────────────
+// ─── Compte rendu (clôture d'une intervention existante ou saisie directe) ──
 
-const CloseModal: React.FC<{ wo: WorkOrder; onClose: () => void }> = ({ wo, onClose }) => {
-  const { checklists, run, backend, assetById, settings } = useGmao();
-  const asset = assetById(wo.assetId);
-  const checklist = checklists.find(c => c.id === wo.checklistId);
-  const now = new Date();
-  const [report, setReport] = useState('');
-  const defaultStart = (() => {
-    const limit = now.getTime() - 5 * 60000;
-    if (wo.startedAt && new Date(wo.startedAt).getTime() < limit) return wo.startedAt;
-    if (wo.plannedStart && new Date(wo.plannedStart).getTime() < limit) return wo.plannedStart;
-    return new Date(now.getTime() - Math.max(0.5, wo.estimatedHours || 1) * 3600000).toISOString();
-  })();
-  const [start, setStart] = useState(toLocalInput(defaultStart));
-  const [end, setEnd] = useState(toLocalInput(now.toISOString()));
-  const [answers, setAnswers] = useState<ChecklistAnswers>({});
-  const [photos, setPhotos] = useState<string[]>([]);
-  const [partsCost, setPartsCost] = useState('');
-  const [externalCost, setExternalCost] = useState('');
-  const [laborHours, setLaborHours] = useState('');
-  const [meter, setMeter] = useState('');
-  const [state, setState] = useState<AssetState>('OPERATIONNEL');
-  const [stateReason, setStateReason] = useState('');
-  const [saving, setSaving] = useState(false);
-
-  const autoHours = hoursBetween(fromLocalInput(start), fromLocalInput(end)) * Math.max(1, wo.assigneeIds.length || 1);
-
-  const submit = async () => {
-    setSaving(true);
-    const res = await run('WO_CLOSE', {
-      id: wo.id, report, actualStart: fromLocalInput(start), actualEnd: fromLocalInput(end),
-      checklistAnswers: checklist ? answers : undefined, photos,
-      partsCost, externalCost, laborHours: laborHours || undefined,
-      meterAtClose: meter || undefined, assetStateAfter: state, assetStateReason: stateReason,
-    }, 'Bon de travail clôturé.');
-    setSaving(false);
-    if (res) onClose();
-  };
-
+const ReportFields: React.FC<{
+  asset?: Asset; checklistId?: string | null; uploadKey: string;
+  value: any; set: (k: string, v: any) => void;
+}> = ({ asset, checklistId, uploadKey, value: f, set }) => {
+  const g = useGmao();
+  const checklist = g.checklists.find(c => c.id === checklistId);
   return (
-    <Modal title={`Clôturer ${wo.number}`} subtitle={`${wo.assetCode} · ${wo.title}`} onClose={onClose} wide footer={<>
-      <Button variant="ghost" onClick={onClose}>Annuler</Button>
-      <Button variant="success" onClick={submit} loading={saving} disabled={!report.trim()} icon={<CheckCircle2 size={16} />}>Clôturer</Button>
-    </>}>
-      <Field label="Rapport d'intervention" required hint="Ce qui a été constaté et fait, pièces changées, points à surveiller.">
-        <Textarea rows={4} value={report} onChange={e => setReport(e.target.value)} />
+    <>
+      <Field label="Compte rendu" required hint="Ce qui a été constaté et fait, pièces changées, points à surveiller.">
+        <Textarea rows={4} value={f.report} onChange={e => set('report', e.target.value)} />
       </Field>
       <div className="grid grid-cols-2 gap-3">
-        <Field label="Début réel"><Input type="datetime-local" value={start} onChange={e => setStart(e.target.value)} /></Field>
-        <Field label="Fin réelle"><Input type="datetime-local" value={end} onChange={e => setEnd(e.target.value)} /></Field>
+        <Field label="Début"><Input type="datetime-local" value={f.start} onChange={e => set('start', e.target.value)} /></Field>
+        <Field label="Fin"><Input type="datetime-local" value={f.end} onChange={e => set('end', e.target.value)} /></Field>
       </div>
-      {checklist && (
-        <div>
-          <Label className="mb-2">{checklist.name}</Label>
-          <ChecklistForm checklist={checklist} value={answers} onChange={setAnswers} upload={f => backend.upload(`workOrders/${wo.id}`, f)} />
-        </div>
-      )}
-      <Field label="Photos"><PhotoInput value={photos} onChange={setPhotos} upload={f => backend.upload(`workOrders/${wo.id}`, f)} /></Field>
+      {checklist && <div><Label className="mb-2">{checklist.name}</Label><ChecklistForm checklist={checklist} value={f.answers} onChange={v => set('answers', v)} upload={file => g.backend.upload(uploadKey, file)} /></div>}
+      <Field label="Photos"><PhotoInput value={f.photos} onChange={v => set('photos', v)} upload={file => g.backend.upload(uploadKey, file)} /></Field>
       {asset?.meterType && (
         <Field label={`Relevé compteur (${METER_UNIT[asset.meterType]})`} hint={`Dernier relevé : ${fmtNum(asset.meterValue)} ${METER_UNIT[asset.meterType]}`}>
-          <Input type="number" inputMode="numeric" value={meter} onChange={e => setMeter(e.target.value)} />
+          <Input type="number" inputMode="numeric" value={f.meter} onChange={e => set('meter', e.target.value)} />
         </Field>
       )}
       <Field label="État de la machine après intervention">
-        <Segmented value={state} onChange={setState} options={[{ value: 'OPERATIONNEL', label: 'Opérationnelle' }, { value: 'DEGRADE', label: 'Mode dégradé' }, { value: 'INDISPONIBLE', label: 'Toujours à l\'arrêt' }]} />
+        <Segmented value={f.state as AssetState} onChange={v => set('state', v)} options={[{ value: 'OPERATIONNEL', label: 'Opérationnelle' }, { value: 'DEGRADE', label: 'Mode dégradé' }, { value: 'INDISPONIBLE', label: 'Toujours à l’arrêt' }]} />
       </Field>
-      {state !== 'OPERATIONNEL' && <Field label="Motif"><Input value={stateReason} onChange={e => setStateReason(e.target.value)} placeholder="Ex. : attente pièce" /></Field>}
-      <div className="rounded-2xl border border-border p-4">
-        <Label className="mb-3">Coûts</Label>
-        <div className="grid sm:grid-cols-3 gap-3">
-          {wo.resourceType === 'INTERNE' && (
-            <Field label="Main d'œuvre (h)" hint={`Calcul auto : ${fmtNum(autoHours, 2)} h${settings.hourlyRate ? ` × ${fmtXpf(settings.hourlyRate)}` : ''}`}>
-              <Input type="number" min={0} step={0.25} value={laborHours} onChange={e => setLaborHours(e.target.value)} placeholder={fmtNum(autoHours, 2)} />
-            </Field>
-          )}
-          <Field label="Pièces (XPF)"><Input type="number" min={0} value={partsCost} onChange={e => setPartsCost(e.target.value)} /></Field>
-          <Field label="Prestataire (XPF)"><Input type="number" min={0} value={externalCost} onChange={e => setExternalCost(e.target.value)} /></Field>
-        </div>
+      {f.state !== 'OPERATIONNEL' && <Field label="Motif"><Input value={f.stateReason} onChange={e => set('stateReason', e.target.value)} placeholder="Ex. : attente pièce" /></Field>}
+    </>
+  );
+};
+
+const defaultTimes = (wo?: WorkOrder) => {
+  const now = new Date();
+  const limit = now.getTime() - 5 * 60000;
+  let start: string;
+  if (wo?.startedAt && new Date(wo.startedAt).getTime() < limit) start = wo.startedAt;
+  else if (wo?.plannedStart && new Date(wo.plannedStart).getTime() < limit) start = wo.plannedStart;
+  else start = new Date(now.getTime() - Math.max(0.5, wo?.estimatedHours || 1) * 3600000).toISOString();
+  return { start: toLocalInput(start), end: toLocalInput(now.toISOString()) };
+};
+
+export const CloseModal: React.FC<{ wo: WorkOrder; onClose: () => void }> = ({ wo, onClose }) => {
+  const g = useGmao();
+  const asset = g.assetById(wo.assetId);
+  const [f, setF] = useState({ report: '', ...defaultTimes(wo), answers: {} as ChecklistAnswers, photos: [] as string[], meter: '', state: 'OPERATIONNEL', stateReason: '' });
+  const [safety, setSafety] = useState<ChecklistAnswers>({});
+  const [saving, setSaving] = useState(false);
+  const set = (k: string, v: any) => setF(p => ({ ...p, [k]: v }));
+  const needSafety = wo.status !== 'EN_COURS' && wo.safetyCheckRequired;
+  const submit = async () => {
+    setSaving(true);
+    const res = await g.run('WO_CLOSE', {
+      id: wo.id, report: f.report, actualStart: fromLocalInput(f.start), actualEnd: fromLocalInput(f.end),
+      checklistAnswers: wo.checklistId ? f.answers : undefined, photos: f.photos, safetyAnswers: needSafety ? safety : undefined,
+      meterAtClose: f.meter || undefined, assetStateAfter: f.state, assetStateReason: f.stateReason,
+    }, 'Intervention réalisée.');
+    setSaving(false);
+    if (res) onClose();
+  };
+  return (
+    <Modal title={`Réaliser ${wo.number}`} subtitle={`${wo.assetCode} · ${wo.title}`} onClose={onClose} wide footer={<>
+      <Button variant="ghost" onClick={onClose}>Annuler</Button>
+      <Button variant="success" onClick={submit} loading={saving} disabled={!f.report.trim() || (needSafety && safetyBlocked(g, true, safety))} icon={<CheckCircle2 size={16} />}>Valider la maintenance</Button>
+    </>}>
+      {wo.procedure && <div className="rounded-2xl bg-gray-50 p-4"><Label className="mb-1">Mode opératoire</Label><p className="text-sm whitespace-pre-wrap text-dark">{wo.procedure}</p></div>}
+      {needSafety && <SafetyBlock wo={wo} answers={safety} onChange={setSafety} />}
+      <ReportFields asset={asset} checklistId={wo.checklistId} uploadKey={`workOrders/${wo.id}`} value={f} set={set} />
+    </Modal>
+  );
+};
+
+/** Intervention faite sur place, sans intervention préalable (après un scan). */
+export const RecordModal: React.FC<{ asset: Asset; onClose: () => void }> = ({ asset, onClose }) => {
+  const g = useGmao();
+  const typology = g.typologies.find(t => t.id === asset.typologyId);
+  const [meta, setMeta] = useState({ kind: 'CORRECTIF', title: '', interventionType: g.settings.interventionTypes[0], checklistId: '' });
+  const [f, setF] = useState({ report: '', ...defaultTimes(), answers: {} as ChecklistAnswers, photos: [] as string[], meter: '', state: 'OPERATIONNEL', stateReason: '' });
+  const [safety, setSafety] = useState<ChecklistAnswers>({});
+  const [saving, setSaving] = useState(false);
+  const set = (k: string, v: any) => setF(p => ({ ...p, [k]: v }));
+  const needSafety = !!g.settings.safetyChecklistId;
+  const submit = async () => {
+    setSaving(true);
+    const res = await g.run('WO_RECORD', {
+      assetId: asset.id, kind: meta.kind, title: meta.title, interventionType: meta.interventionType, checklistId: meta.checklistId || null,
+      report: f.report, actualStart: fromLocalInput(f.start), actualEnd: fromLocalInput(f.end),
+      checklistAnswers: meta.checklistId ? f.answers : undefined, photos: f.photos, safetyAnswers: needSafety ? safety : undefined,
+      meterAtClose: f.meter || undefined, assetStateAfter: f.state, assetStateReason: f.stateReason,
+    }, 'Intervention enregistrée.');
+    setSaving(false);
+    if (res) onClose();
+  };
+  return (
+    <Modal title="Intervention réalisée" subtitle={`${asset.code} · ${asset.name}`} onClose={onClose} wide footer={<>
+      <Button variant="ghost" onClick={onClose}>Annuler</Button>
+      <Button variant="success" onClick={submit} loading={saving} disabled={!meta.title.trim() || !f.report.trim() || (needSafety && safetyBlocked(g, true, safety))} icon={<CheckCircle2 size={16} />}>Enregistrer</Button>
+    </>}>
+      <div className="grid sm:grid-cols-2 gap-3">
+        <Field label="Nature"><Segmented value={meta.kind} onChange={v => { setMeta({ ...meta, kind: v, checklistId: v === 'PREVENTIF' ? (meta.checklistId || typology?.defaultChecklistId || '') : meta.checklistId }); set('answers', {}); }} options={[{ value: 'CORRECTIF', label: 'Curatif' }, { value: 'PREVENTIF', label: 'Préventif' }]} /></Field>
+        <Field label="Type"><Select value={meta.interventionType} onChange={e => setMeta({ ...meta, interventionType: e.target.value })}>{g.settings.interventionTypes.map(t => <option key={t} value={t}>{t}</option>)}</Select></Field>
       </div>
+      <Field label="Intitulé" required><Input value={meta.title} onChange={e => setMeta({ ...meta, title: e.target.value })} placeholder="Ex. : remplacement bavette, vidange…" /></Field>
+      <Field label="Check-list">
+        <Select value={meta.checklistId} onChange={e => { setMeta({ ...meta, checklistId: e.target.value }); set('answers', {}); }}>
+          <option value="">Aucune</option>
+          {g.checklists.filter(c => c.kind === 'MAINTENANCE').map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+        </Select>
+      </Field>
+      {needSafety && <SafetyBlock wo={{ safetyCheckRequired: true }} answers={safety} onChange={setSafety} />}
+      <ReportFields asset={asset} checklistId={meta.checklistId} uploadKey={`assets/${asset.id}`} value={f} set={set} />
     </Modal>
   );
 };
@@ -275,6 +315,7 @@ const CloseModal: React.FC<{ wo: WorkOrder; onClose: () => void }> = ({ wo, onCl
 
 export const WorkOrderDetailModal: React.FC<{ id: string; onClose: () => void }> = ({ id, onClose }) => {
   const g = useGmao();
+  const canExecute = useCanExecute();
   const wo = g.workOrders.find(w => w.id === id);
   const [sub, setSub] = useState<'plan' | 'start' | 'close' | 'edit' | null>(null);
   if (!wo) return null;
@@ -282,30 +323,30 @@ export const WorkOrderDetailModal: React.FC<{ id: string; onClose: () => void }>
   const req = g.requests.find(r => r.id === wo.workRequestId);
   const checklist = g.checklists.find(c => c.id === wo.checklistId);
   const safety = g.checklists.find(c => c.id === g.settings.safetyChecklistId);
-  const mine = wo.assigneeIds.includes(g.me.id);
-  const canExecute = g.isResp || (g.isTech && mine);
+  const exec = canExecute(wo);
+  const mineOnly = wo.assigneeIds.every(x => x === g.me.id);
+  const canPlan = g.isResp || (g.isTech && g.settings.techniciansSelfPlan && mineOnly && exec);
   const open = OPEN_WORK_ORDER_STATUSES.includes(wo.status);
-  const cost = workOrderCost(wo, g.settings.hourlyRate);
 
   const hold = async () => {
-    const reason = await g.prompt({ title: 'Mettre en attente', message: 'Raison (attente pièce, météo, accès…)', required: true });
-    if (reason) await g.run('WO_HOLD', { id: wo.id, reason }, 'Bon de travail mis en attente.');
+    const reason = await g.prompt({ title: 'Mettre en attente', message: 'Raison (attente pièce, accès, garage…)', required: true });
+    if (reason) await g.run('WO_HOLD', { id: wo.id, reason }, 'Intervention mise en attente.');
   };
   const cancel = async () => {
-    const reason = await g.prompt({ title: 'Annuler le bon de travail', message: wo.pmPlanId ? "Motif. L'occurrence préventive sera sautée (alerte refusée)." : 'Motif de l\'annulation.', required: true, variant: 'danger', confirmLabel: 'Annuler le BT' });
-    if (reason) { const r = await g.run('WO_CANCEL', { id: wo.id, reason }, 'Bon de travail annulé.'); if (r) onClose(); }
+    const reason = await g.prompt({ title: 'Annuler l’intervention', message: wo.pmPlanId ? "Motif. Cette occurrence du préventif sera sautée." : 'Motif de l’annulation.', required: true, variant: 'danger', confirmLabel: 'Annuler l’intervention' });
+    if (reason) { const r = await g.run('WO_CANCEL', { id: wo.id, reason }, 'Intervention annulée.'); if (r) onClose(); }
   };
-  const unplan = async () => { await g.run('WO_UNPLAN', { id: wo.id }, 'Retiré du planning.'); };
+  const unplan = async () => { await g.run('WO_UNPLAN', { id: wo.id }, 'Retirée du planning.'); };
 
-  const footer = open ? (
+  const footer = open && !g.isClient ? (
     <>
       {g.isResp && <Button variant="danger" small icon={<XCircle size={14} />} onClick={cancel}>Annuler</Button>}
-      {g.isResp && wo.status !== 'EN_ATTENTE' && <Button variant="secondary" small icon={<PauseCircle size={14} />} onClick={hold}>En attente</Button>}
+      {(g.isResp || (exec && wo.assigneeIds.includes(g.me.id))) && wo.status !== 'EN_ATTENTE' && <Button variant="secondary" small icon={<PauseCircle size={14} />} onClick={hold}>En attente</Button>}
       {g.isResp && <Button variant="secondary" small icon={<Pencil size={14} />} onClick={() => setSub('edit')}>Modifier</Button>}
-      {g.isResp && wo.status === 'PLANIFIE' && <Button variant="secondary" small icon={<Undo2 size={14} />} onClick={unplan}>Déplanifier</Button>}
-      {g.isResp && wo.status !== 'EN_COURS' && <Button variant="secondary" small icon={<CalendarClock size={14} />} onClick={() => setSub('plan')}>{wo.status === 'PLANIFIE' ? 'Replanifier' : 'Planifier'}</Button>}
-      {canExecute && wo.status !== 'EN_COURS' && <Button small icon={<Play size={14} />} onClick={() => setSub('start')}>Démarrer</Button>}
-      {canExecute && <Button variant="success" small icon={<CheckCircle2 size={14} />} onClick={() => setSub('close')}>Clôturer</Button>}
+      {canPlan && wo.status === 'PLANIFIE' && <Button variant="secondary" small icon={<Undo2 size={14} />} onClick={unplan}>Déplanifier</Button>}
+      {canPlan && wo.status !== 'EN_COURS' && <Button variant="secondary" small icon={<CalendarClock size={14} />} onClick={() => setSub('plan')}>{wo.status === 'PLANIFIE' ? 'Replanifier' : 'Planifier'}</Button>}
+      {exec && wo.status !== 'EN_COURS' && <Button variant="secondary" small icon={<Play size={14} />} onClick={() => setSub('start')}>Démarrer</Button>}
+      {exec && <Button variant="success" small icon={<CheckCircle2 size={14} />} onClick={() => setSub('close')}>Réaliser</Button>}
     </>
   ) : undefined;
 
@@ -315,44 +356,38 @@ export const WorkOrderDetailModal: React.FC<{ id: string; onClose: () => void }>
         <div className="flex flex-wrap gap-2 items-center">
           <WoStatusBadge s={wo.status} />
           <PriorityBadge p={wo.priority} />
-          <Badge className={wo.kind === 'PREVENTIF' ? 'bg-teal-50 text-teal-700' : 'bg-gray-100 text-gray-600'}>{wo.kind === 'PREVENTIF' ? 'Préventif' : 'Correctif'}</Badge>
+          <Badge className={wo.kind === 'PREVENTIF' ? 'bg-teal-50 text-teal-700' : 'bg-gray-100 text-gray-600'}>{KIND_LABEL[wo.kind]}</Badge>
           {isLate(wo) && <Badge className="bg-danger/10 text-danger">En retard</Badge>}
-          {wo.generatedAutomatically && <Badge className="bg-gray-100 text-gray-500">Notifié automatiquement</Badge>}
+          {wo.generatedAutomatically && <Badge className="bg-gray-100 text-gray-500">Générée par le préventif</Badge>}
         </div>
         {wo.holdReason && wo.status === 'EN_ATTENTE' && <div className="rounded-2xl bg-amber-50 text-amber-800 text-sm p-3"><b>En attente :</b> {wo.holdReason}</div>}
-        {wo.cancelReason && <div className="rounded-2xl bg-gray-50 text-gray-600 text-sm p-3"><b>Annulé :</b> {wo.cancelReason}</div>}
+        {wo.cancelReason && <div className="rounded-2xl bg-gray-50 text-gray-600 text-sm p-3"><b>Annulée :</b> {wo.cancelReason}</div>}
         {wo.description && <p className="text-sm text-dark whitespace-pre-wrap">{wo.description}</p>}
+        {open && !g.isClient && <ContactLine asset={asset} />}
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-          <Info label="Équipement"><button onClick={() => { onClose(); g.openAsset(wo.assetId); }} className="text-primary font-bold">{wo.assetCode}</button> · {wo.assetName}</Info>
+          <Info label="Machine"><button onClick={() => { onClose(); g.openAsset(wo.assetId); }} className="text-primary font-bold">{wo.assetCode}</button> · {wo.assetName}</Info>
           <Info label="Site">{g.siteName(wo.siteId)}</Info>
-          <Info label="Type">{typeLabel(wo.interventionType)}</Info>
+          <Info label="Type">{wo.interventionType}</Info>
           <Info label="Échéance">{fmtDate(wo.dueDate)} <span className="text-gray-400">({relativeDays(wo.dueDate)})</span></Info>
-          <Info label="Planifié">{wo.plannedStart ? `${fmtDateTime(wo.plannedStart)} → ${fmtTime(wo.plannedEnd)}` : '—'}</Info>
-          <Info label={wo.resourceType === 'EXTERNE' ? 'Prestataire' : 'Intervenants'}>{wo.resourceType === 'EXTERNE' ? wo.externalProvider : wo.assigneeNames.join(', ')}</Info>
-          {wo.estimatedHours ? <Info label="Durée estimée">{fmtNum(wo.estimatedHours, 1)} h</Info> : null}
-          {req && <Info label="Demande"><button onClick={() => { onClose(); g.openRequest(req.id); }} className="text-primary font-bold">{req.number}</button> · {req.requesterName}</Info>}
-          <Info label="Créé">{fmtDateTime(wo.createdAt)} · {wo.createdByName}</Info>
+          <Info label="Planifiée">{wo.plannedStart ? `${fmtDateTime(wo.plannedStart)} → ${fmtTime(wo.plannedEnd)}` : '—'}</Info>
+          <Info label={wo.resourceType === 'EXTERNE' ? 'Prestataire' : 'Intervenants'}>{wo.resourceType === 'EXTERNE' ? wo.externalProvider : wo.assigneeNames.join(', ') || 'Non attribuée'}</Info>
+          {wo.clientId && <Info label="Client">{g.clientName(wo.clientId)}</Info>}
+          {req && <Info label="Signalement"><button onClick={() => { onClose(); g.openRequest(req.id); }} className="text-primary font-bold">{req.number}</button> · {req.requesterName}</Info>}
+          {!g.isClient && <Info label="Créée">{fmtDateTime(wo.createdAt)} · {wo.createdByName}</Info>}
         </div>
-        {asset && asset.state !== 'OPERATIONNEL' && (
-          <div className="text-sm text-gray-600">Machine : <b>{STATE_LABEL[asset.state]}</b>{asset.stateReason ? ` — ${asset.stateReason}` : ''}</div>
-        )}
-        {wo.procedure ? (
-          <div className="rounded-2xl bg-gray-50 p-4"><Label className="mb-1">Mode opératoire</Label><p className="text-sm whitespace-pre-wrap">{wo.procedure}</p></div>
-        ) : open && <div className="text-xs text-gray-400">Pas de mode opératoire renseigné.</div>}
-        {req?.photos?.length ? <div><Label className="mb-2">Photos de la demande</Label><PhotoStrip urls={req.photos} /></div> : null}
-
-        {wo.startedAt && <Info label="Démarré">{fmtDateTime(wo.startedAt)} · {wo.startedByName}</Info>}
+        {asset && asset.state !== 'OPERATIONNEL' && <div className="text-sm text-gray-600">Machine : <b>{STATE_LABEL[asset.state]}</b>{asset.stateReason ? ` — ${asset.stateReason}` : ''}</div>}
+        {wo.procedure && !g.isClient && <div className="rounded-2xl bg-gray-50 p-4"><Label className="mb-1">Mode opératoire</Label><p className="text-sm whitespace-pre-wrap">{wo.procedure}</p></div>}
+        {req?.photos?.length ? <div><Label className="mb-2">Photos du signalement</Label><PhotoStrip urls={req.photos} /></div> : null}
         {wo.safetyAnswers && safety && <div><Label className="mb-2">{safety.name}</Label><ChecklistAnswersView checklist={safety} answers={wo.safetyAnswers} /></div>}
 
         {wo.status === 'CLOTURE' && (
           <div className="rounded-2xl border border-success/30 bg-success/5 p-4 space-y-3">
-            <Label>Rapport d'intervention</Label>
+            <Label>Compte rendu</Label>
             <p className="text-sm whitespace-pre-wrap text-dark">{wo.report}</p>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              <Info label="Réalisé">{fmtDateTime(wo.actualStart)} → {fmtTime(wo.actualEnd)}</Info>
-              <Info label="Clôturé par">{wo.closedByName}</Info>
-              <Info label="Main d'œuvre">{fmtNum(wo.laborHours, 2)} h</Info>
-              <Info label="Coût total">{fmtXpf(cost.total)}</Info>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+              <Info label="Réalisée le">{g.isClient ? fmtDate(wo.actualEnd) : `${fmtDateTime(wo.actualStart)} → ${fmtTime(wo.actualEnd)}`}</Info>
+              <Info label="Par">{wo.resourceType === 'EXTERNE' ? wo.externalProvider : wo.closedByName}</Info>
+              {wo.meterAtClose != null && <Info label="Compteur">{fmtNum(wo.meterAtClose)} {asset?.meterType ? METER_UNIT[asset.meterType] : ''}</Info>}
             </div>
             <PhotoStrip urls={wo.photos} />
             {checklist && <ChecklistAnswersView checklist={checklist} answers={wo.checklistAnswers} />}
@@ -369,19 +404,45 @@ export const WorkOrderDetailModal: React.FC<{ id: string; onClose: () => void }>
 
 // ─── Liste ───────────────────────────────────────────────────────────────────
 
-type Filter = 'OPEN' | 'MINE' | 'A_PLANIFIER' | 'LATE' | 'EN_ATTENTE' | 'CLOTURE' | 'ALL';
+type Filter = 'OPEN' | 'MINE' | 'FREE' | 'A_PLANIFIER' | 'LATE' | 'EN_ATTENTE' | 'CLOTURE' | 'ALL';
+
+export const WoRow: React.FC<{ w: WorkOrder }> = ({ w }) => {
+  const { siteName, openWorkOrder } = useGmao();
+  return (
+    <button onClick={() => openWorkOrder(w.id)} className="w-full text-left px-4 sm:px-5 py-3.5 border-b border-border last:border-0 hover:bg-gray-50/70 flex items-center gap-3">
+      <PriorityBadge p={w.priority} />
+      <div className="flex-1 min-w-0">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-sm font-black text-dark">{w.assetCode}</span>
+          <span className="text-sm text-dark truncate">{w.title}</span>
+        </div>
+        <div className="text-[11px] text-gray-400 mt-0.5">
+          {w.number} · {KIND_LABEL[w.kind]} · {siteName(w.siteId)}
+          {w.plannedStart && w.status === 'PLANIFIE' ? ` · ${fmtDateTime(w.plannedStart)}` : ''}
+          {w.assigneeNames.length ? ` · ${w.assigneeNames.join(', ')}` : w.externalProvider ? ` · ${w.externalProvider}` : ' · non attribuée'}
+        </div>
+      </div>
+      <div className="flex flex-col items-end gap-1 shrink-0">
+        <WoStatusBadge s={w.status} />
+        <span className={`text-[11px] font-bold ${isLate(w) ? 'text-danger' : 'text-gray-400'}`}>{w.status === 'CLOTURE' ? fmtDate(w.closedAt) : `éch. ${relativeDays(w.dueDate)}`}</span>
+      </div>
+    </button>
+  );
+};
 
 export const WorkOrdersView: React.FC = () => {
-  const { workOrders, isResp, isTech, me, siteName, sites, openWorkOrder, settings } = useGmao();
-  const [filter, setFilter] = useState<Filter>(isTech ? 'MINE' : 'OPEN');
+  const g = useGmao();
+  const [filter, setFilter] = useState<Filter>(g.isTech ? 'MINE' : 'OPEN');
   const [kind, setKind] = useState<'ALL' | 'CORRECTIF' | 'PREVENTIF'>('ALL');
   const [site, setSite] = useState('');
   const [creating, setCreating] = useState(false);
+  const scope = useMemo(() => g.workOrders.filter(w => !g.isTech || w.assigneeIds.includes(g.me.id) || g.mine(g.assetById(w.assetId))), [g.workOrders, g.assets]);
 
   const list = useMemo(() => {
-    let l = workOrders.filter(w => (kind === 'ALL' || w.kind === kind) && (!site || w.siteId === site));
+    let l = scope.filter(w => (kind === 'ALL' || w.kind === kind) && (!site || w.siteId === site));
     if (filter === 'OPEN') l = l.filter(w => OPEN_WORK_ORDER_STATUSES.includes(w.status));
-    if (filter === 'MINE') l = l.filter(w => w.assigneeIds.includes(me.id) && OPEN_WORK_ORDER_STATUSES.includes(w.status));
+    if (filter === 'MINE') l = l.filter(w => w.assigneeIds.includes(g.me.id) && OPEN_WORK_ORDER_STATUSES.includes(w.status));
+    if (filter === 'FREE') l = l.filter(w => !w.assigneeIds.length && OPEN_WORK_ORDER_STATUSES.includes(w.status));
     if (filter === 'A_PLANIFIER') l = l.filter(w => w.status === 'A_PLANIFIER');
     if (filter === 'LATE') l = l.filter(isLate);
     if (filter === 'EN_ATTENTE') l = l.filter(w => w.status === 'EN_ATTENTE');
@@ -390,63 +451,34 @@ export const WorkOrdersView: React.FC = () => {
     return l.sort((a, b) => filter === 'CLOTURE'
       ? (b.closedAt || '').localeCompare(a.closedAt || '')
       : order[a.status] - order[b.status] || a.priority.localeCompare(b.priority) || a.dueDate.localeCompare(b.dueDate));
-  }, [workOrders, filter, kind, site, me.id]);
-
-  const exportCsv = () => {
-    downloadCsv(`bons-de-travail-${new Date().toISOString().slice(0, 10)}.csv`,
-      ['N°', 'Nature', 'Statut', 'Priorité', 'Équipement', 'Désignation', 'Site', 'Intitulé', 'Type', 'Échéance', 'Planifié', 'Intervenants', 'Début réel', 'Fin réelle', 'Main d\'œuvre (h)', 'Pièces (XPF)', 'Prestataire (XPF)', 'Coût total (XPF)', 'Mode opératoire', 'Rapport'],
-      list.map(w => {
-        const c = workOrderCost(w, settings.hourlyRate);
-        return [w.number, w.kind, WORK_ORDER_STATUS_LABEL[w.status], w.priority, w.assetCode, w.assetName, siteName(w.siteId), w.title, typeLabel(w.interventionType), fmtDate(w.dueDate), fmtDateTime(w.plannedStart), w.resourceType === 'EXTERNE' ? w.externalProvider : w.assigneeNames.join(', '), fmtDateTime(w.actualStart), fmtDateTime(w.actualEnd), w.laborHours ?? '', w.partsCost ?? '', w.externalCost ?? '', w.status === 'CLOTURE' ? Math.round(c.total) : '', w.procedure ? 'oui' : 'non', w.report || ''];
-      }));
-  };
+  }, [scope, filter, kind, site, g.me.id]);
 
   const filters: { value: Filter; label: string }[] = [
-    ...(isTech ? [{ value: 'MINE' as Filter, label: 'Mes BT' }] : []),
-    { value: 'OPEN', label: 'Ouverts' },
+    ...(g.isTech ? [{ value: 'MINE' as Filter, label: 'Les miennes' }, { value: 'FREE' as Filter, label: 'À prendre' }] : []),
+    { value: 'OPEN', label: 'Ouvertes' },
     { value: 'A_PLANIFIER', label: 'À planifier' },
     { value: 'LATE', label: 'En retard' },
     { value: 'EN_ATTENTE', label: 'En attente' },
-    { value: 'CLOTURE', label: 'Clôturés' },
-    { value: 'ALL', label: 'Tous' },
+    { value: 'CLOTURE', label: 'Réalisées' },
   ];
 
   return (
     <div className="max-w-6xl mx-auto">
       <PageHeader
-        title="Bons de travail"
-        subtitle={`${workOrders.filter(w => OPEN_WORK_ORDER_STATUSES.includes(w.status)).length} ouverts · ${workOrders.filter(isLate).length} en retard`}
+        title="Interventions"
+        subtitle={`${scope.filter(w => OPEN_WORK_ORDER_STATUSES.includes(w.status)).length} ouvertes · ${scope.filter(isLate).length} en retard`}
         actions={<>
-          {isResp && <Button variant="secondary" icon={<Download size={16} />} onClick={exportCsv}>Export CSV</Button>}
-          {isResp && <Button icon={<Plus size={16} />} onClick={() => setCreating(true)}>Nouveau BT</Button>}
+          <Button variant="secondary" icon={<ClipboardCheck size={16} />} onClick={() => g.navigate('suivi')}>Suivi des maintenances</Button>
+          <Button icon={<Plus size={16} />} onClick={() => setCreating(true)}>Nouvelle intervention</Button>
         </>}
       />
       <div className="flex flex-wrap gap-2 mb-4 items-center">
         <Segmented value={filter} onChange={setFilter} options={filters} />
-        <Segmented value={kind} onChange={setKind} options={[{ value: 'ALL', label: 'Tous types' }, { value: 'CORRECTIF', label: 'Correctif' }, { value: 'PREVENTIF', label: 'Préventif' }]} />
-        <div className="w-44"><Select value={site} onChange={e => setSite(e.target.value)}><option value="">Tous les sites</option>{sites.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</Select></div>
+        <Segmented value={kind} onChange={setKind} options={[{ value: 'ALL', label: 'Toutes' }, { value: 'CORRECTIF', label: 'Curatif' }, { value: 'PREVENTIF', label: 'Préventif' }]} />
+        {g.sites.length > 1 && <div className="w-44"><Select value={site} onChange={e => setSite(e.target.value)}><option value="">Tous les sites</option>{g.sites.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</Select></div>}
       </div>
       <Card className="overflow-hidden">
-        {list.length === 0 ? <Empty><ClipboardList className="mx-auto mb-2 text-gray-300" />Aucun bon de travail.</Empty> : list.map(w => (
-          <button key={w.id} onClick={() => openWorkOrder(w.id)} className="w-full text-left px-4 sm:px-5 py-3.5 border-b border-border last:border-0 hover:bg-gray-50/70 flex items-center gap-3">
-            <PriorityBadge p={w.priority} />
-            <div className="flex-1 min-w-0">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="text-sm font-black text-dark">{w.assetCode}</span>
-                <span className="text-sm text-dark truncate">{w.title}</span>
-              </div>
-              <div className="text-[11px] text-gray-400 mt-0.5">
-                {w.number} · {w.kind === 'PREVENTIF' ? 'Préventif' : 'Correctif'} · {siteName(w.siteId)}
-                {w.plannedStart && w.status === 'PLANIFIE' ? ` · ${fmtDateTime(w.plannedStart)}` : ''}
-                {w.assigneeNames.length ? ` · ${w.assigneeNames.join(', ')}` : w.externalProvider ? ` · ${w.externalProvider}` : ''}
-              </div>
-            </div>
-            <div className="flex flex-col items-end gap-1 shrink-0">
-              <WoStatusBadge s={w.status} />
-              <span className={`text-[11px] font-bold ${isLate(w) ? 'text-danger' : 'text-gray-400'}`}>{w.status === 'CLOTURE' ? fmtDate(w.closedAt) : `éch. ${relativeDays(w.dueDate)}`}</span>
-            </div>
-          </button>
-        ))}
+        {list.length === 0 ? <Empty><ClipboardList className="mx-auto mb-2 text-gray-300" />Aucune intervention.</Empty> : list.map(w => <WoRow key={w.id} w={w} />)}
       </Card>
       {creating && <WorkOrderFormModal onClose={() => setCreating(false)} />}
     </div>

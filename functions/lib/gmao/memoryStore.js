@@ -4,8 +4,8 @@ exports.emptyState = emptyState;
 exports.memoryStore = memoryStore;
 // Stockage en mémoire : mode démo du front et tests de la logique métier.
 const model_1 = require("./model");
-function emptyState(users = []) {
-    return { collections: {}, counters: {}, settings: { ...model_1.DEFAULT_SETTINGS }, users };
+function emptyState(users = [], plan = null, tenantName = 'Démo') {
+    return { collections: {}, counters: {}, settings: { ...model_1.DEFAULT_SETTINGS }, users, tenantName, plan };
 }
 const copy = (v) => (v === undefined ? v : JSON.parse(JSON.stringify(v)));
 function memoryStore(state, onChange) {
@@ -24,9 +24,11 @@ function memoryStore(state, onChange) {
         async remove(coll, id) { delete c(coll)[id]; onChange?.(coll); },
         newId(coll) { seq++; return `${coll.replace('gmao', '').toLowerCase()}_${Date.now().toString(36)}${seq.toString(36)}${Math.random().toString(36).slice(2, 6)}`; },
         async nextNumber(key) { state.counters[key] = (state.counters[key] || 0) + 1; return state.counters[key]; },
-        async getSettings() { return { ...model_1.DEFAULT_SETTINGS, ...state.settings }; },
+        async getSettings() { return (0, model_1.withDefaults)(state.settings); },
         async saveSettings(s) { state.settings = copy(s); onChange?.('settings'); },
         async getUsers() { return copy(state.users); },
+        async getTenantInfo() { return { name: state.tenantName || 'Démo', plan: state.plan ? copy(state.plan) : null }; },
+        async registerQr() { },
     };
 }
 //# sourceMappingURL=memoryStore.js.map

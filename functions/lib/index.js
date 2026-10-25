@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.gmaoDailyPreventiveScan = exports.gmaoAction = exports.nukePlatform = exports.repairAdminProfile = exports.seedSystem = exports.manageSignalement = exports.manageVisitSession = exports.manageCdilUnit = exports.manageEquipmentType = exports.submitChecklistAnswers = exports.manageChecklist = exports.submitReport = exports.manageSite = exports.manageStructure = exports.manageEquipment = exports.manageUser = exports.deleteEquipmentLog = exports.processEquipmentScan = void 0;
+exports.gmaoSetPlan = exports.gmaoCreateOrganization = exports.gmaoDailyPreventiveScan = exports.gmaoPublic = exports.gmaoAction = exports.nukePlatform = exports.repairAdminProfile = exports.seedSystem = exports.manageSignalement = exports.manageVisitSession = exports.manageCdilUnit = exports.manageEquipmentType = exports.submitChecklistAnswers = exports.manageChecklist = exports.submitReport = exports.manageSite = exports.manageStructure = exports.manageEquipment = exports.manageUser = exports.deleteEquipmentLog = exports.processEquipmentScan = void 0;
 const functions = require("firebase-functions/v1");
 const admin = require("firebase-admin");
 const firestore_1 = require("firebase-admin/firestore");
@@ -341,6 +341,15 @@ exports.manageUser = functions
         const normalizedRole = typeof userData?.role === "string" ? userData.role.toUpperCase() : null;
         if (!normalizedRole)
             throw new functions.https.HttpsError("invalid-argument", "Rôle requis.");
+        await checkGmaoSeats(tenantId, normalizedRole);
+        let gmaoClientIds;
+        if (normalizedRole === "CLIENT" && userData.gmaoClientId) {
+            const c = await db.collection("tenants").doc(tenantId).collection("gmaoClients").doc(String(userData.gmaoClientId)).get();
+            if (!c.exists || c.data()?.isArchived)
+                throw new functions.https.HttpsError("invalid-argument", "Organisation cliente introuvable.");
+            gmaoClientIds = { [tenantId]: c.id };
+        }
+        delete userData.gmaoClientId;
         const created = await auth.createUser({
             email: userData.email,
             password: tempPassword,
@@ -355,6 +364,7 @@ exports.manageUser = functions
             mustChangePassword: true,
             tenantsAccess: { [tenantId]: normalizedRole },
             accessibleTenantIds: [tenantId],
+            ...(gmaoClientIds ? { gmaoClientIds } : {}),
         }, { merge: true });
         writeAuditLog({ action: 'USER_CREATED', actorId: context.auth.uid, actorName, tenantId, targetId: created.uid, targetName: `${userData.firstName} ${userData.lastName}`, details: { role: normalizedRole, email: userData.email } }).catch(console.error);
         return { uid: created.uid, password: tempPassword };
@@ -370,6 +380,9 @@ exports.manageUser = functions
         }
         if (action === "UPDATE") {
             const cleanData = JSON.parse(JSON.stringify(userData));
+            if (cleanData.isDisabled === false && targetData?.isDisabled) {
+                await checkGmaoSeats(tenantId, targetData?.tenantsAccess?.[tenantId] || targetData?.role, targetUserId);
+            }
             await targetRef.update(cleanData);
             if (cleanData.isDisabled !== undefined) {
                 await auth.updateUser(targetUserId, { disabled: cleanData.isDisabled });
@@ -413,6 +426,7 @@ exports.manageUser = functions
         if (targetData.tenantsAccess?.[tenantId]) {
             throw new functions.https.HttpsError("already-exists", "Cet utilisateur a déjà accès à ce site.");
         }
+        await checkGmaoSeats(tenantId, normalizedRole);
         await targetRef.update({
             [`tenantsAccess.${tenantId}`]: normalizedRole,
             accessibleTenantIds: firestore_1.FieldValue.arrayUnion(tenantId),
@@ -1097,7 +1111,7 @@ exports.nukePlatform = functions
     .https.onCall(async (data, context) => {
     return { success: false, message: "Disabled for safety." };
 });
-// ─── GMAO (branche CSP) ─────────────────────────────────────────────────────
+// ─── GMAO multi-entreprises ─────────────────────────────────────────────────
 const core_1 = require("./gmao/core");
 const firestoreStore_1 = require("./gmao/firestoreStore");
 const model_1 = require("./gmao/model");
@@ -1116,6 +1130,14 @@ async function applyGmaoEffects(tenantId, actorId, actorName, effects) {
         }
     }
 }
+function toHttpsError(err, label) {
+    if (err instanceof core_1.GmaoError)
+        return new functions.https.HttpsError(err.code, err.message);
+    if (err instanceof functions.https.HttpsError)
+        return err;
+    console.error("[GMAO]", label, err);
+    return new functions.https.HttpsError("internal", "Erreur serveur GMAO.");
+}
 exports.gmaoAction = functions
     .region("australia-southeast1")
     .https.onCall(async (data, context) => {
@@ -1126,10 +1148,14 @@ exports.gmaoAction = functions
         throw new functions.https.HttpsError("invalid-argument", "Organisation invalide.");
     const { user, isGlobalAdmin } = await verifyAccess(context.auth.uid, tenantId, ["ADMIN", "TECHNICIAN", "AGENT", "CLIENT"]);
     const mikiRole = isGlobalAdmin ? "ADMIN" : (user.tenantsAccess?.[tenantId] || user.role);
+    const role = model_1.ROLE_FROM_MIKI[mikiRole] || "CLIENT";
+    const clientId = user.gmaoClientIds?.[tenantId] || null;
+    if (role === "CLIENT" && !clientId)
+        throw new functions.https.HttpsError("permission-denied", "Compte client non rattaché à une organisation cliente.");
     const actorName = `${user.firstName || ""} ${user.lastName || ""}`.trim() || user.email;
     const ctx = {
         store: (0, firestoreStore_1.firestoreStore)(db, tenantId),
-        actor: { id: context.auth.uid, name: actorName, role: model_1.ROLE_FROM_MIKI[mikiRole] || "DEMANDEUR" },
+        actor: { id: context.auth.uid, name: actorName, role, clientId },
         now: new Date(),
         effects: [],
     };
@@ -1139,23 +1165,89 @@ exports.gmaoAction = functions
         return result ?? { success: true };
     }
     catch (err) {
-        if (err instanceof core_1.GmaoError)
-            throw new functions.https.HttpsError(err.code, err.message);
-        console.error("[GMAO]", action, err);
-        throw new functions.https.HttpsError("internal", "Erreur serveur GMAO.");
+        throw toHttpsError(err, action);
     }
 });
-// Génère chaque matin les BT préventifs arrivés à échéance (calendrier ou compteur).
+// Photos jointes à un signalement public : envoyées en data URL, déposées dans Storage par le serveur.
+async function storePublicPhotos(tenantId, token, photos) {
+    const out = [];
+    const bucket = admin.storage().bucket();
+    for (const p of (Array.isArray(photos) ? photos : []).slice(0, 3)) {
+        const m = typeof p === "string" && p.match(/^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$/);
+        if (!m)
+            continue;
+        const buf = Buffer.from(m[2], "base64");
+        if (buf.length > 1.5 * 1024 * 1024)
+            continue;
+        const path = `tenants/${tenantId}/gmao/public/${token}/${Date.now()}_${crypto.randomBytes(4).toString("hex")}.jpg`;
+        const dlToken = crypto.randomUUID();
+        await bucket.file(path).save(buf, { contentType: m[1], metadata: { metadata: { firebaseStorageDownloadTokens: dlToken } } });
+        const host = process.env.FIREBASE_STORAGE_EMULATOR_HOST ? `http://${process.env.FIREBASE_STORAGE_EMULATOR_HOST}` : "https://firebasestorage.googleapis.com";
+        out.push(`${host}/v0/b/${bucket.name}/o/${encodeURIComponent(path)}?alt=media&token=${dlToken}`);
+    }
+    return out;
+}
+/** Limite de débit par adresse IP (10 signalements publics par heure). */
+async function checkIpRate(ip) {
+    const key = crypto.createHash("sha256").update(`gmao:${ip}`).digest("hex").slice(0, 40);
+    const ref = db.collection("gmaoRateLimits").doc(key);
+    await db.runTransaction(async (tx) => {
+        const snap = await tx.get(ref);
+        const now = Date.now();
+        const d = snap.data() || {};
+        const fresh = !d.windowStart || now - d.windowStart > 3600000;
+        const count = fresh ? 1 : (d.count || 0) + 1;
+        if (count > 10)
+            throw new functions.https.HttpsError("resource-exhausted", "Trop de signalements envoyés depuis cet appareil. Réessayez dans une heure.");
+        tx.set(ref, { count, windowStart: fresh ? now : d.windowStart, updatedAt: new Date().toISOString() });
+    });
+}
+// Page publique du QR code : aucun compte requis.
+exports.gmaoPublic = functions
+    .region("australia-southeast1")
+    .https.onCall(async (data, context) => {
+    const { action, token } = data || {};
+    if (!["INFO", "REPORT"].includes(action) || typeof token !== "string" || !/^[A-Za-z0-9_-]{8,64}$/.test(token)) {
+        throw new functions.https.HttpsError("invalid-argument", "Requête invalide.");
+    }
+    const idx = await db.collection(firestoreStore_1.QR_INDEX).doc(token).get();
+    if (!idx.exists)
+        throw new functions.https.HttpsError("not-found", "Ce QR code ne correspond à aucune machine active.");
+    const { tenantId } = idx.data();
+    const tenant = await db.collection("tenants").doc(tenantId).get();
+    if (!tenant.exists || tenant.data()?.status === "SUSPENDED" || !tenant.data()?.modules?.gmao) {
+        throw new functions.https.HttpsError("failed-precondition", "Service indisponible pour cette organisation.");
+    }
+    const payload = { ...(data.payload || {}), token };
+    try {
+        if (action === "REPORT") {
+            const ip = (context.rawRequest?.headers?.["x-forwarded-for"] || "").split(",")[0].trim() || context.rawRequest?.ip || "inconnue";
+            await checkIpRate(ip);
+            payload.photos = await storePublicPhotos(tenantId, token, payload.photos);
+        }
+        const ctx = {
+            store: (0, firestoreStore_1.firestoreStore)(db, tenantId),
+            actor: { id: "public", name: String(payload.name || "Anonyme").slice(0, 80), role: "CLIENT", clientId: null },
+            now: new Date(),
+            effects: [],
+        };
+        const result = await (0, core_1.handlePublicAction)(ctx, action, payload);
+        if (action === "REPORT")
+            await applyGmaoEffects(tenantId, "public", ctx.actor.name, ctx.effects);
+        return result;
+    }
+    catch (err) {
+        throw toHttpsError(err, `public ${action}`);
+    }
+});
+// Génère chaque matin les interventions préventives arrivées à échéance (calendrier ou compteur).
 exports.gmaoDailyPreventiveScan = functions
     .region("australia-southeast1")
     .pubsub.schedule("0 5 * * *")
     .timeZone("Pacific/Noumea")
     .onRun(async () => {
-    const tenants = await db.collection("tenants").get();
+    const tenants = await db.collection("tenants").where("modules.gmao", "==", true).get();
     for (const t of tenants.docs) {
-        const plans = await t.ref.collection("gmaoPmPlans").limit(1).get();
-        if (plans.empty)
-            continue;
         const ctx = {
             store: (0, firestoreStore_1.firestoreStore)(db, t.id),
             actor: { id: "system", name: "Planification automatique", role: "RESPONSABLE" },
@@ -1171,5 +1263,82 @@ exports.gmaoDailyPreventiveScan = functions
         }
     }
     return null;
+});
+/** Contrôle des quotas de comptes (techniciens, responsables) d'une organisation GMAO. */
+async function checkGmaoSeats(tenantId, mikiRole, excludeUserId) {
+    const tenant = (await db.collection("tenants").doc(tenantId).get()).data();
+    const plan = tenant?.plan;
+    if (!tenant?.modules?.gmao || !plan)
+        return;
+    const field = mikiRole === "AGENT" ? "maxTechnicians" : mikiRole === "TECHNICIAN" ? "maxManagers" : null;
+    if (!field)
+        return;
+    const snap = await db.collection("users").where(`tenantsAccess.${tenantId}`, "==", mikiRole).get();
+    const active = snap.docs.filter(d => d.id !== excludeUserId && !d.data().isDisabled && !d.data().isArchived).length;
+    const max = plan[field] ?? Infinity;
+    if (active + 1 > max) {
+        const label = model_1.PLANS[plan.tier]?.label || plan.tier;
+        const what = mikiRole === "AGENT" ? `${max} technicien(s)` : `${max} compte(s) responsable`;
+        throw new functions.https.HttpsError("resource-exhausted", `Votre offre ${label} est limitée à ${what}. Désactivez un compte ou passez à l'offre supérieure.`);
+    }
+}
+/** Création d'une organisation GMAO avec son offre et ses kits de démarrage (administrateur plateforme). */
+exports.gmaoCreateOrganization = functions
+    .region("australia-southeast1")
+    .https.onCall(async (data, context) => {
+    if (!context.auth)
+        throw new functions.https.HttpsError("unauthenticated", "Connexion requise.");
+    const { isGlobalAdmin, user } = await verifyAccess(context.auth.uid, "platform", ["ADMIN"]);
+    if (!isGlobalAdmin)
+        throw new functions.https.HttpsError("permission-denied", "Réservé à l'administrateur de la plateforme.");
+    const name = String(data?.name || "").trim();
+    if (!name)
+        throw new functions.https.HttpsError("invalid-argument", "Nom de l'organisation requis.");
+    const tier = ["STARTER", "PRO", "ULTRA", "SUR_MESURE"].includes(data?.tier) ? data.tier : "STARTER";
+    const plan = { ...(0, model_1.planOf)(tier), ...(tier === "SUR_MESURE" && data?.limits ? {
+            maxTechnicians: Number(data.limits.maxTechnicians) || (0, model_1.planOf)(tier).maxTechnicians,
+            maxAssets: Number(data.limits.maxAssets) || (0, model_1.planOf)(tier).maxAssets,
+            maxClients: Number(data.limits.maxClients) || (0, model_1.planOf)(tier).maxClients,
+        } : {}) };
+    const ref = db.collection("tenants").doc();
+    await ref.set({
+        id: ref.id, name, status: "ACTIVE", createdAt: firestore_1.FieldValue.serverTimestamp(), timezone: "Pacific/Noumea",
+        modules: { gmao: true }, plan,
+        gmao: { ...model_1.DEFAULT_SETTINGS, assetCodeMode: data?.assetCodeMode === "MANUAL" ? "MANUAL" : "GENERATED", assetCodePrefix: String(data?.assetCodePrefix || "MAC").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6) || "MAC" },
+        quotas: { equipments: plan.maxAssets, users: plan.maxTechnicians + plan.maxManagers + 50 },
+    });
+    const actorName = `${user.firstName || ""} ${user.lastName || ""}`.trim() || user.email;
+    const ctx = { store: (0, firestoreStore_1.firestoreStore)(db, ref.id), actor: { id: context.auth.uid, name: actorName, role: "RESPONSABLE" }, now: new Date(), effects: [] };
+    for (const kitId of Array.isArray(data?.kits) ? data.kits : []) {
+        try {
+            await (0, core_1.handleGmaoAction)(ctx, "KIT_APPLY", { kitId });
+        }
+        catch (err) {
+            console.error("[GMAO] kit", kitId, err);
+        }
+    }
+    writeAuditLog({ action: "TENANT_CREATED", actorId: context.auth.uid, actorName, tenantId: ref.id, targetId: ref.id, targetName: name, details: { gmao: true, tier } }).catch(console.error);
+    return { id: ref.id };
+});
+/** Changement d'offre d'une organisation (administrateur plateforme). */
+exports.gmaoSetPlan = functions
+    .region("australia-southeast1")
+    .https.onCall(async (data, context) => {
+    if (!context.auth)
+        throw new functions.https.HttpsError("unauthenticated", "Connexion requise.");
+    const { isGlobalAdmin } = await verifyAccess(context.auth.uid, "platform", ["ADMIN"]);
+    if (!isGlobalAdmin)
+        throw new functions.https.HttpsError("permission-denied", "Réservé à l'administrateur de la plateforme.");
+    const tier = ["STARTER", "PRO", "ULTRA", "SUR_MESURE"].includes(data?.tier) ? data.tier : "STARTER";
+    const base = (0, model_1.planOf)(tier);
+    const plan = tier === "SUR_MESURE" && data?.limits ? {
+        ...base,
+        maxTechnicians: Number(data.limits.maxTechnicians) || base.maxTechnicians,
+        maxAssets: Number(data.limits.maxAssets) || base.maxAssets,
+        maxClients: Number(data.limits.maxClients) || base.maxClients,
+        maxManagers: Number(data.limits.maxManagers) || base.maxManagers,
+    } : base;
+    await db.collection("tenants").doc(String(data?.tenantId)).set({ plan, modules: { gmao: true } }, { merge: true });
+    return { success: true, plan };
 });
 //# sourceMappingURL=index.js.map

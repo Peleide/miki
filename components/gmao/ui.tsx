@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { X, Search, Camera, Loader2, ChevronDown, Check } from 'lucide-react';
 import {
-  Asset, AssetState, ChecklistAnswers, GmaoChecklist, GmaoUser, Priority, PRIORITY_LABEL, RequestStatus,
-  REQUEST_STATUS_LABEL, STATE_LABEL, WorkOrderStatus, WORK_ORDER_STATUS_LABEL, FAMILIES,
+  Asset, AssetState, ChecklistAnswers, GmaoChecklist, GmaoUser, Priority, PRIORITY_WORD, RequestStatus,
+  REQUEST_STATUS_LABEL, STATE_LABEL, WorkOrderStatus, WORK_ORDER_STATUS_LABEL, priorityLabel,
 } from '../../functions/src/gmao/model';
 
 // ─── Formatage ───────────────────────────────────────────────────────────────
@@ -14,7 +14,7 @@ export const fmtDateTime = (iso?: string | null) => (iso ? `${fmtDate(iso)} ${fm
 export const fmtXpf = (n?: number | null) => `${Math.round(n || 0).toLocaleString('fr-FR')} XPF`;
 export const fmtNum = (n?: number | null, digits = 0) => (n == null ? '—' : n.toLocaleString('fr-FR', { maximumFractionDigits: digits }));
 export const fmtPct = (r?: number | null) => (r == null ? '—' : `${(r * 100).toLocaleString('fr-FR', { maximumFractionDigits: 1 })} %`);
-export const familyLabel = (code?: string) => FAMILIES.find(f => f.code === code)?.label || code || '—';
+export const telHref = (phone?: string) => (phone ? `tel:${phone.replace(/[^\d+]/g, '')}` : undefined);
 
 /** Valeur pour <input type="datetime-local"> en heure locale. */
 export function toLocalInput(iso?: string | null): string {
@@ -67,7 +67,7 @@ export const PRIORITY_CLASS: Record<Priority, string> = {
   P3: 'bg-amber-100 text-amber-700',
   P4: 'bg-gray-100 text-gray-500',
 };
-export const PriorityBadge: React.FC<{ p: Priority }> = ({ p }) => <Badge className={PRIORITY_CLASS[p]} title={PRIORITY_LABEL[p]}>{p}</Badge>;
+export const PriorityBadge: React.FC<{ p: Priority }> = ({ p }) => <Badge className={PRIORITY_CLASS[p]} title={priorityLabel(p)}>{PRIORITY_WORD[p]}</Badge>;
 
 const WO_CLASS: Record<WorkOrderStatus, string> = {
   A_PLANIFIER: 'bg-blue-50 text-blue-600',
@@ -80,7 +80,7 @@ const WO_CLASS: Record<WorkOrderStatus, string> = {
 export const WoStatusBadge: React.FC<{ s: WorkOrderStatus }> = ({ s }) => <Badge className={WO_CLASS[s]}>{WORK_ORDER_STATUS_LABEL[s]}</Badge>;
 
 const REQ_CLASS: Record<RequestStatus, string> = {
-  A_APPROUVER: 'bg-danger/10 text-danger',
+  A_TRAITER: 'bg-danger/10 text-danger',
   APPROUVEE: 'bg-blue-50 text-blue-600',
   PLANIFIEE: 'bg-indigo-50 text-indigo-600',
   CLOTUREE: 'bg-success/10 text-success',
@@ -248,12 +248,12 @@ export const AssetPicker: React.FC<{ assets: Asset[]; value: string; onChange: (
       </div>
       <div className="max-h-56 overflow-y-auto">
         {results.map(a => (
-          <button type="button" key={a.id} onClick={() => onChange(a.id)} className="w-full text-left px-3 py-2 hover:bg-primary/5 flex items-center justify-between gap-2 border-b border-gray-50 last:border-0">
+          <button type="button" key={a.id} onClick={() => { onChange(a.id); setQ(''); }} className="w-full text-left px-3 py-2 hover:bg-primary/5 flex items-center justify-between gap-2 border-b border-gray-50 last:border-0">
             <span className="text-sm"><b>{a.code}</b> · {a.name}</span>
             <span className="text-[11px] text-gray-400 shrink-0">{siteName(a.siteId)}</span>
           </button>
         ))}
-        {!results.length && <div className="px-3 py-4 text-sm text-gray-400">Aucun équipement trouvé.</div>}
+        {!results.length && <div className="px-3 py-4 text-sm text-gray-400">Aucune machine trouvée.</div>}
       </div>
     </div>
   );
@@ -275,6 +275,50 @@ export const UserChips: React.FC<{ users: GmaoUser[]; value: string[]; onChange:
     {!users.length && <span className="text-sm text-gray-400">Aucun technicien enregistré.</span>}
   </div>
 );
+
+/** Périmètre d'une machine : tous les techniciens (liste vide) ou une sélection. */
+export const PerimeterPicker: React.FC<{ users: GmaoUser[]; value: string[]; onChange: (ids: string[]) => void }> = ({ users, value, onChange }) => {
+  const techs = users.filter(u => u.role === 'TECHNICIEN');
+  const all = value.length === 0;
+  return (
+    <div className="space-y-2">
+      <div className="flex flex-wrap gap-2">
+        <button type="button" onClick={() => onChange([])} className={`px-3 py-1.5 rounded-xl text-xs font-bold border flex items-center gap-1.5 ${all ? 'bg-primary text-white border-primary' : 'bg-white text-gray-600 border-border'}`}>{all && <Check size={12} />}Tous les techniciens</button>
+        {techs.map(u => {
+          const on = value.includes(u.id);
+          return (
+            <button type="button" key={u.id} onClick={() => onChange(on ? value.filter(x => x !== u.id) : [...value, u.id])}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold border flex items-center gap-1.5 ${on ? 'bg-primary text-white border-primary' : 'bg-white text-gray-600 border-border'}`}>{on && <Check size={12} />}{u.name}</button>
+          );
+        })}
+      </div>
+      {!techs.length && <p className="text-[11px] text-gray-400">Aucun compte technicien : la machine sera visible de tous ceux que vous créerez.</p>}
+    </div>
+  );
+};
+
+export const Toggle: React.FC<{ checked: boolean; onChange: (v: boolean) => void; label: string; hint?: string; disabled?: boolean }> = ({ checked, onChange, label, hint, disabled }) => (
+  <label className={`flex items-start justify-between gap-4 py-3 ${disabled ? 'opacity-50' : 'cursor-pointer'}`}>
+    <span className="min-w-0">
+      <span className="block text-sm font-bold text-dark">{label}</span>
+      {hint && <span className="block text-xs text-gray-500 mt-0.5">{hint}</span>}
+    </span>
+    <button type="button" role="switch" aria-checked={checked} aria-label={label} disabled={disabled} onClick={() => onChange(!checked)}
+      className={`relative shrink-0 w-11 h-6 rounded-full transition-colors ${checked ? 'bg-primary' : 'bg-gray-200'}`}>
+      <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all ${checked ? 'left-[22px]' : 'left-0.5'}`} />
+    </button>
+  </label>
+);
+
+export const Meter: React.FC<{ label: string; used: number; max: number | null }> = ({ label, used, max }) => {
+  const ratio = max ? Math.min(1, used / max) : 0;
+  return (
+    <div>
+      <div className="flex justify-between text-sm mb-1"><span className="font-semibold text-dark">{label}</span><span className={`font-black ${max && used >= max ? 'text-danger' : 'text-dark'}`}>{used}{max ? ` / ${max}` : ''}</span></div>
+      <div className="h-2 rounded-full bg-gray-100 overflow-hidden"><div className={`h-full rounded-full ${ratio >= 1 ? 'bg-danger' : ratio > 0.8 ? 'bg-orange-400' : 'bg-primary'}`} style={{ width: `${max ? ratio * 100 : 0}%` }} /></div>
+    </div>
+  );
+};
 
 // ─── Photos ──────────────────────────────────────────────────────────────────
 
@@ -339,6 +383,14 @@ export const ChecklistForm: React.FC<{ checklist: GmaoChecklist; value: Checklis
                 </div>
               )}
             </div>
+            {item.type === 'CHOICE' && (
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {(item.options || []).map((o, i) => (
+                  <button type="button" key={o} onClick={() => set(item.id, o)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold border ${v === o ? (i === 0 ? 'bg-success text-white border-success' : 'bg-orange-500 text-white border-orange-500') : 'bg-white text-gray-600 border-border'}`}>{o}</button>
+                ))}
+              </div>
+            )}
             {item.type === 'TEXT' && <Input className="mt-2" value={v || ''} onChange={e => set(item.id, e.target.value)} />}
             {item.type === 'NUMBER' && <Input className="mt-2" type="number" inputMode="decimal" value={v ?? ''} onChange={e => set(item.id, e.target.value === '' ? '' : Number(e.target.value))} />}
             {item.type === 'PHOTO' && upload && <div className="mt-2"><PhotoInput value={v ? [v] : []} max={1} upload={upload} onChange={urls => set(item.id, urls[0] || '')} /></div>}
@@ -360,7 +412,7 @@ export const ChecklistAnswersView: React.FC<{ checklist?: GmaoChecklist; answers
           <div key={i.id} className="flex justify-between gap-3 text-sm py-1 border-b border-gray-50 last:border-0">
             <span className="text-gray-600">{i.label}</span>
             {i.type === 'PHOTO' && v ? <a href={v} target="_blank" rel="noreferrer" className="text-primary font-bold">Photo</a>
-              : <span className={`font-bold ${v === false ? 'text-danger' : v === true ? 'text-success' : 'text-dark'}`}>{txt}</span>}
+              : <span className={`font-bold ${v === false ? 'text-danger' : v === true || (i.type === 'CHOICE' && v === i.options?.[0]) ? 'text-success' : i.type === 'CHOICE' && v ? 'text-orange-600' : 'text-dark'}`}>{txt}</span>}
           </div>
         );
       })}

@@ -1,73 +1,96 @@
 # MIKI — Documentation Projet
 
-> **Branche `csp`** : GMAO sur mesure pour la CSP (Calédonienne de Services Publics), niveau 1, **sans aucune
-> interconnexion** avec leurs outils (Sage, Yooz, Navitec) et sans reprise des fichiers Excel existants.
-> Voir la section « GMAO CSP » ci-dessous ; le reste du document décrit le socle Miki hérité de `vivian`.
+> **Branche `gmao`** : GMAO multi-entreprises, vendue en offres Starter / Pro / Ultra / Sur mesure. Issue de la branche
+> `csp` (GMAO sur mesure CSP), rendue générique : tout ce qui diffère d'un client à l'autre est un **réglage** ou un
+> **kit de démarrage**, jamais un développement spécifique. L'ancienne interface Miki (emprunts, CDil) reste active pour
+> les organisations sans le module GMAO. Le reste du document décrit ce socle Miki hérité de `vivian`.
 
-## GMAO CSP (branche `csp`)
+## GMAO multi-entreprises (branche `gmao`)
 
 ### Démarrer
 ```bash
-# Démo sans Firebase (toute la logique tourne dans le navigateur, données fictives en localStorage)
+# Démo sans Firebase (logique complète dans le navigateur, données fictives en localStorage)
 npm run dev            # puis http://localhost:3000/?demo
 # Tests de la logique métier (sans émulateur)
 cd functions && npm test
-# Émulateurs : après `firebase emulators:start`
-node scripts/seedCsp.mjs   # tenant `csp`, comptes resp@ / tech1@ / tech2@ / tech3@ / demandeur@csp.test (password123)
+# Émulateurs (Java requis) : terminal 1
+cd functions && npm run build && cd .. && firebase emulators:start
+# terminal 2 : données
+node scripts/seedGmao.mjs   # organisations « demo » et « wdp », mot de passe password123
+npm run dev                 # http://localhost:3000
 ```
+Comptes : `resp@demo.test` (responsable), `tom@demo.test` / `yann@demo.test` (techniciens), `lea@demo.test` (cliente
+Clinique du Lagon), `responsable@wdp.test` et `technicien@wdp.test` (organisation vierge), `admin@miki.nc` (plateforme).
+Les émulateurs écoutent sur `0.0.0.0` et le front se connecte à l'hôte de la page : un téléphone du réseau local
+(`http://<IP du PC>:3000`) peut tester le QR code et le formulaire public.
 
-### Activation par organisation
-L'interface GMAO s'affiche pour une organisation si `tenants/{id}.modules.gmao == true` (à poser dans la console
-Firestore, le seed le fait pour `csp`). Les autres organisations gardent l'interface Miki classique : la branche peut
-donc être déployée sans casser les autres clients. **Recommandé quand même : un projet Firebase dédié à la CSP.**
+### Rôles et comptes
+| Rôle Miki (tenantsAccess) | Rôle GMAO | Droits |
+|---|---|---|
+| ADMIN / TECHNICIAN | Responsable maintenance | Tout : parc, clients, planning, préventif, réglages, comptes. Compte principal de l'organisation |
+| AGENT | Technicien | Son parc (périmètre), son planning, réalise les interventions, relevés, états, signalements |
+| CLIENT + `gmaoClientIds[tenantId]` | Client | Ses machines uniquement : historique, suivi des maintenances, signalements, remarques |
+| (aucun compte) | Public | Formulaire de signalement via le QR code (nom obligatoire) |
+
+### Offres et quotas (`functions/src/gmao/model.ts` → `PLANS`)
+Starter 1 technicien / 20 machines / 1 client · Pro 3 / 60 / 5 · Ultra 6 / 200 / 10 · Sur mesure (limites libres).
+Champ `plan` du document tenant. Contrôlés **côté serveur** : machines actives de niveau « machine » (`ASSET_CREATE`,
+`ASSET_IMPORT`, `ASSET_RESTORE`), clients actifs (`CLIENT_SAVE`), comptes techniciens et responsables (`manageUser`,
+`checkGmaoSeats`). Les machines et clients archivés ne comptent pas. Un « client » est une organisation (plusieurs comptes).
+Console plateforme : `GmaoAdminPanel` (création d'organisation avec offre + kits + responsable, changement d'offre).
 
 ### Architecture
 | Fichier | Rôle |
 |---|---|
-| `functions/src/gmao/model.ts` | Types, libellés, référentiels (familles EN/BEN/VL/RE/PL/IF/QAV, sociétés CSP/SAMERTOWN/CDV, types d'intervention, priorités P1–P4). **Partagé front / back.** |
-| `functions/src/gmao/rules.ts` | Règles pures : priorité suggérée, échéances préventives, disponibilité, coûts. |
-| `functions/src/gmao/core.ts` | `handleGmaoAction(ctx, action, payload)` : **toutes** les mutations + permissions par rôle. Effets (notifications, audit) renvoyés dans `ctx.effects`. |
-| `functions/src/gmao/firestoreStore.ts` / `memoryStore.ts` | Stockage Firestore (prod) / mémoire (démo, tests). |
-| `functions/src/gmao/seed.ts` | Jeu de démo CSP, rejoue ~90 jours d'activité via `handleGmaoAction`. |
-| `functions/src/index.ts` (fin) | Cloud Functions `gmaoAction` (callable unique) et `gmaoDailyPreventiveScan` (05:00 Nouméa, nécessite le plan Blaze). |
-| `services/gmao/*` | `GmaoBackend` : `firebaseBackend` (callable + `onSnapshot`) ou `demoBackend` (même cœur, en mémoire). |
-| `components/gmao/*` | `GmaoShell` (navigation par rôle), vues `Dashboard`, `Planning`, `WorkOrders`, `Requests`, `Preventive`, `Assets`, `Terrain`, `Settings`. |
+| `functions/src/gmao/model.ts` | Types, offres, réglages par défaut, collections. **Partagé front / back.** |
+| `functions/src/gmao/recurrence.ts` | Récurrences type Google Agenda (jour/semaine/mois/an, jours de semaine, « 2e mardi », fin après N fois ou à une date). Dates civiles dans le fuseau de l'organisation |
+| `functions/src/gmao/rules.ts` | Priorité suggérée, échéances préventives (sans rattrapage), disponibilité, périmètre |
+| `functions/src/gmao/core.ts` | `handleGmaoAction` (comptes connectés) et `handlePublicAction` (QR public) : toutes les mutations, permissions, périmètres, quotas, anti-spam |
+| `functions/src/gmao/kits.ts` | Kits de démarrage : Véhicules, Engins de nettoyage, Centrales de dilution, Équipements divers |
+| `functions/src/gmao/seed.ts` | Démo générique (Démo Services NC), ~150 jours rejoués |
+| `functions/src/index.ts` (fin) | `gmaoAction`, `gmaoPublic` (sans compte, limite 10/h par IP, photos → Storage), `gmaoDailyPreventiveScan` (05:00, plan Blaze), `gmaoCreateOrganization`, `gmaoSetPlan` |
+| `services/gmao/*` | `firebaseBackend` / `demoBackend` (même cœur en mémoire), `PublicBackend` |
+| `components/gmao/*` | `GmaoShell` (navigation par rôle), `Dashboard` (+ accueil client), `Planning`, `WorkOrders` (interventions), `Requests` (signalements), `Preventive`, `Assets` (parc, fiche machine, QR, import CSV), `Tracking` (suivi des maintenances), `Terrain` (scanner), `Settings`, `PublicReportPage` |
 
 Le front importe `functions/src/gmao/*` directement (Vite). `functions/lib` est versionné : **rebuild après chaque
 modification** (`cd functions && npm run build`).
 
-### Rôles
-| Rôle Miki | Rôle GMAO | Droits |
-|---|---|---|
-| ADMIN / TECHNICIAN | Responsable maintenance | Tout : approuve les DI, crée/planifie les BT, gammes, planning, réglages, comptes |
-| AGENT | Technicien | Son planning, démarre / clôture **ses** BT, relevés compteur, état machine, DI |
-| CLIENT | Demandeur / direction | Crée des DI, suit leur état, consulte parc et tableau de bord |
+### QR code
+Chaque machine a un jeton `qrToken` non devinable ; le QR contient `https://<app>/q/<jeton>`. Index global
+`gmaoQr/{jeton} → {tenantId, assetId}` (écrit par le serveur). Téléphone sans session → `PublicReportPage` ; compte
+connecté → fiche de la machine (`openToken`) ; scanner de l'application → `tokenFromScan` isole le jeton (un code machine
+tapé fonctionne aussi). Garde-fous du formulaire public : champ piège, durée minimale de saisie, nom et description
+obligatoires, pas de lien, doublons fusionnés, 5 signalements/h par machine, 60/jour par organisation, 10/h par IP.
+Un signalement public ne modifie jamais l'état de la machine ; « faux signalement » = classé sans suite marqué.
+
+### Réglages par organisation (champ `gmao` du tenant)
+`requireApproval` (validation des signalements, désactivée par défaut), `techniciansSelfPlan`, `publicReports`,
+`assetHierarchy` (sous-ensembles), `safetyChecklistId`, `assetCodeMode` (`GENERATED` + `assetCodePrefix`, ou `MANUAL`),
+`priorityDelays` (Urgente / Haute / Normale / Basse), `interventionTypes`, `utcOffsetMinutes`.
+Référentiels propres : typologies (`gmaoTypologies`, compteur et check-list par défaut), clients (`gmaoClients`), sites,
+check-lists (types : conforme/non conforme, choix, nombre, texte, photo).
 
 ### Collections Firestore (`tenants/{tenantId}/…`)
-`gmaoAssets` (arborescence équipement > sous-équipement > composant via `parentId`), `gmaoAssetEvents` (états et
-relevés, base des indicateurs), `gmaoRequests` (DI), `gmaoWorkOrders` (BT), `gmaoPmPlans` (gammes + `schedule` par
-équipement), `gmaoTasks` (tâches, congés, formations du planning), `checklists` (partagée, `kind` MAINTENANCE /
-SECURITE), `sites`, `counters/gmao` (numéros DI-AAAA-NNNN / BT-AAAA-NNNN). Réglages : champ `gmao` du document tenant
-(`hourlyRate`, `safetyChecklistId`). Fichiers : Storage `tenants/{id}/gmao/**` (membres du tenant, 20 Mo max).
+`gmaoAssets` (`technicianIds` vide = tous, `clientId`, `qrToken`, `nextPm` dénormalisé), `gmaoAssetEvents`,
+`gmaoRequests` (SIG-AAAA-NNNN, `source` APP / QR_PUBLIC, `kind` PROBLEME / REMARQUE), `gmaoWorkOrders` (INT-AAAA-NNNN),
+`gmaoPmPlans` (`recurrence` ou `meterInterval`, `typologyId` = gamme type), `gmaoTasks`, `gmaoTypologies`, `gmaoClients`,
+`checklists`, `sites`, `counters/gmao`. `clientId` est recopié sur interventions, signalements et événements pour que les
+règles Firestore limitent un client à ses machines (`firestore.rules`).
 
 ### Flux
-- **DI** `A_APPROUVER → APPROUVEE → PLANIFIEE → CLOTUREE` (ou `ANNULEE`). Priorité suggérée : sécurité ou arrêt → P1 ;
-  réglementaire ou dégradé → P2 ; sans impact → P3 ; confort → P4. L'état déclaré dégrade l'état de la machine.
-- **BT** `A_PLANIFIER → PLANIFIE → EN_COURS → CLOTURE` (+ `EN_ATTENTE`, `ANNULE`). Démarrage bloqué si la check-list
-  de sécurité (Take 5 / permis feu) a un point « Non ». Clôture : rapport obligatoire, check-list, coûts, état machine.
-- **Préventif** : calendaire (jours/semaines/mois) ou compteur (h / km). BT créé à `échéance − alerte`, un seul BT
-  ouvert par gamme × équipement ; clôture → prochaine échéance depuis la date réelle ; annulation → occurrence sautée.
-- **Disponibilité** : le mode dégradé compte comme disponible (CDC 4.1.2).
+- **Signalement** `A_TRAITER → APPROUVEE (intervention créée) → PLANIFIEE → CLOTUREE` ou `ANNULEE` (classé sans suite /
+  faux signalement). Sans validation, un signalement d'un compte crée directement l'intervention ; un signalement public
+  reste « à traiter ». Remarque : « marquer comme lue ».
+- **Intervention** `A_PLANIFIER → PLANIFIE → EN_COURS → CLOTURE` (+ `EN_ATTENTE`, `ANNULE`). Attribuée d'office à
+  l'unique technicien du périmètre. « Fait » depuis la fiche (sans démarrage préalable) ; « Intervention réalisée » =
+  création + clôture en une étape (`WO_RECORD`).
+- **Préventif** : une seule intervention ouverte par gamme × machine ; une échéance manquée n'est pas rattrapée (fait en
+  retard en juillet pour juin → prochaine en août) ; ancrage « dates fixes » ou « depuis la réalisation » ; compteur :
+  depuis le relevé ou paliers fixes.
 
-### Hors périmètre (volontairement, niveau 1)
-Stock de pièces, achats, fournisseurs, budgets, prises de mesures hors compteur, interfaces Sage / Yooz / Navitec,
-reprise Dimo Maint / Excel, hors-ligne, saisie vocale.
-
-### Limites connues
-- Les règles Firestore laissent tout membre du tenant lire les coûts (masqués dans l'interface du demandeur seulement).
-- Un admin plateforme n'est pas proposé comme intervenant (non listé dans les comptes du tenant).
-- L'émulateur Firestore n'a pas pu être lancé dans l'environnement de développement initial : la logique est testée
-  (unitaire + Firestore simulé + parcours navigateur en mode démo), mais un passage complet sur émulateurs reste à faire.
+### Hors périmètre
+Stock, achats, coûts et indicateurs avancés (MTBF, MTTR) retirés volontairement, interfaces externes, hors-ligne.
+Facturation des offres : manuelle.
 
 ## Vue d'ensemble
 Application de gestion de parc matériel hospitalier, SaaS multi-tenant.  

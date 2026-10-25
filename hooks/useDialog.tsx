@@ -24,6 +24,7 @@ interface PromptConfig {
   cancelLabel?: string;
   variant?: 'danger' | 'warning' | 'default';
   required?: boolean;
+  defaultValue?: string;
 }
 
 interface PendingPrompt extends PromptConfig {
@@ -91,7 +92,7 @@ function PromptModal({ pending, onConfirm, onCancel }: {
   onConfirm: (val: string) => void;
   onCancel: () => void;
 }) {
-  const [value, setValue] = React.useState('');
+  const [value, setValue] = React.useState(pending.defaultValue || '');
   const v = VARIANT_STYLES[pending.variant || 'default'];
   const Icon = v.icon;
   const canSubmit = !pending.required || value.trim().length > 0;

@@ -1,11 +1,18 @@
 import type { Firestore } from 'firebase-admin/firestore';
-import { CollName, DEFAULT_SETTINGS, GmaoSettings, GmaoUser, ROLE_FROM_MIKI } from './model';
-import type { GmaoStore } from './core';
+import { CollName, GmaoSettings, GmaoUser, ROLE_FROM_MIKI, withDefaults } from './model';
+import type { GmaoStore, TenantInfo } from './core';
+
+export const QR_INDEX = 'gmaoQr';
 
 export function firestoreStore(db: Firestore, tenantId: string): GmaoStore {
   const tenantRef = db.collection('tenants').doc(tenantId);
   const coll = (name: CollName) => tenantRef.collection(name);
   let usersCache: GmaoUser[] | null = null;
+  let tenantCache: any = null;
+  const tenantDoc = async () => {
+    if (!tenantCache) tenantCache = (await tenantRef.get()).data() || {};
+    return tenantCache;
+  };
 
   return {
     async get<T>(c: CollName, id: string) {
@@ -31,24 +38,32 @@ export function firestoreStore(db: Firestore, tenantId: string): GmaoStore {
       });
     },
     async getSettings() {
-      const snap = await tenantRef.get();
-      return { ...DEFAULT_SETTINGS, ...(snap.data()?.gmao || {}) } as GmaoSettings;
+      return withDefaults((await tenantDoc()).gmao);
     },
     async saveSettings(s: GmaoSettings) {
       await tenantRef.set({ gmao: s }, { merge: true });
+      if (tenantCache) tenantCache.gmao = s;
     },
     async getUsers() {
       if (usersCache) return usersCache;
       const snap = await db.collection('users').where('accessibleTenantIds', 'array-contains', tenantId).get();
       usersCache = snap.docs
         .map(d => ({ ...d.data(), id: d.id }) as any)
-        .filter(u => !u.isArchived && !u.isDisabled)
+        .filter(u => !u.isArchived && !u.isDisabled && u.tenantsAccess?.platform !== 'ADMIN')
         .map(u => ({
           id: u.id,
           name: `${u.firstName || ''} ${u.lastName || ''}`.trim() || u.email,
-          role: ROLE_FROM_MIKI[u.tenantsAccess?.[tenantId] || u.role] || 'DEMANDEUR',
+          role: ROLE_FROM_MIKI[u.tenantsAccess?.[tenantId] || u.role] || 'CLIENT',
+          clientId: u.gmaoClientIds?.[tenantId] || null,
         }));
       return usersCache;
+    },
+    async getTenantInfo(): Promise<TenantInfo> {
+      const t = await tenantDoc();
+      return { name: t.name || 'Maintenance', plan: t.plan || null };
+    },
+    async registerQr(token: string, assetId: string) {
+      await db.collection(QR_INDEX).doc(token).set({ tenantId, assetId, createdAt: new Date().toISOString() });
     },
   };
 }

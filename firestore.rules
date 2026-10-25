@@ -42,14 +42,37 @@ service cloud.firestore {
       }
     }
 
+    // GMAO : un compte client (rattaché à une organisation cliente) ne lit que ce qui concerne ses machines.
+    function gmaoClientId(tenantId) {
+      let d = getUserData();
+      return ('gmaoClientIds' in d) && (tenantId in d.gmaoClientIds) ? d.gmaoClientIds[tenantId] : null;
+    }
+    function isGmaoClient(tenantId) {
+      return gmaoClientId(tenantId) != null && !isPlatformAdmin();
+    }
+    function clientMayRead(tenantId, data) {
+      return isGmaoClient(tenantId) && data.clientId == gmaoClientId(tenantId);
+    }
+
     match /tenants/{tenantId} {
       allow read: if request.auth != null && hasTenantAccess(tenantId);
       allow write: if false;
 
+      // Membres « internes » : lecture de tout le tenant (comportement Miki existant).
       match /{document=**} {
-        allow read: if request.auth != null && hasTenantAccess(tenantId);
+        allow read: if request.auth != null && hasTenantAccess(tenantId) && !isGmaoClient(tenantId);
         allow write: if false;
       }
+
+      // Comptes clients GMAO : uniquement leurs machines et leur historique, plus les référentiels partagés.
+      match /gmaoAssets/{id} { allow read: if request.auth != null && hasTenantAccess(tenantId) && clientMayRead(tenantId, resource.data); }
+      match /gmaoAssetEvents/{id} { allow read: if request.auth != null && hasTenantAccess(tenantId) && clientMayRead(tenantId, resource.data); }
+      match /gmaoRequests/{id} { allow read: if request.auth != null && hasTenantAccess(tenantId) && clientMayRead(tenantId, resource.data); }
+      match /gmaoWorkOrders/{id} { allow read: if request.auth != null && hasTenantAccess(tenantId) && clientMayRead(tenantId, resource.data); }
+      match /gmaoClients/{id} { allow read: if request.auth != null && hasTenantAccess(tenantId) && isGmaoClient(tenantId) && id == gmaoClientId(tenantId); }
+      match /gmaoTypologies/{id} { allow read: if request.auth != null && hasTenantAccess(tenantId); }
+      match /checklists/{id} { allow read: if request.auth != null && hasTenantAccess(tenantId); }
+      match /sites/{id} { allow read: if request.auth != null && hasTenantAccess(tenantId); }
 
       match /cdilUnits/{unitId} {
         allow read: if request.auth != null && hasTenantAccess(tenantId);
@@ -61,6 +84,10 @@ service cloud.firestore {
         allow write: if false;
       }
     }
+
+    // Index des QR codes et limites anti-spam : Cloud Functions uniquement.
+    match /gmaoQr/{token} { allow read, write: if false; }
+    match /gmaoRateLimits/{key} { allow read, write: if false; }
 
     match /audit_logs/{logId} {
       allow read: if request.auth != null && isPlatformAdmin();
