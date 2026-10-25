@@ -448,7 +448,7 @@ export const AssetDetailModal: React.FC<{ id: string; onClose: () => void }> = (
           <div>
             <Label className="mb-2">{g.isClient ? 'En cours' : 'À faire sur cette machine'}</Label>
             <div className="space-y-2">
-              {!g.isClient && pendingReqs.map(r => (
+              {pendingReqs.map(r => (
                 <button key={r.id} onClick={() => g.openRequest(r.id)} className="w-full text-left rounded-2xl border border-danger/30 bg-danger/5 px-3 py-2.5 text-sm flex items-center gap-2">
                   <Flag size={14} className="text-danger shrink-0" />
                   <span className="flex-1 min-w-0 truncate"><b>{r.number}</b> · {r.description}</span>
