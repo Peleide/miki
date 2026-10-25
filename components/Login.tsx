@@ -6,10 +6,13 @@ import { LogIn, Loader2, AlertCircle } from 'lucide-react';
 import { Logo } from './Logo';
 
 const DEV_ROLES = [
-  { label: 'Admin',       email: 'admin@miki.nc',   color: 'bg-gray-900 text-white',    desc: 'Plateforme complète' },
-  { label: 'Technicien',  email: 'tech@miki.nc',    color: 'bg-indigo-600 text-white',  desc: 'Gestion · Visites CDil · Tickets' },
-  { label: 'Agent',       email: 'agent@miki.nc',   color: 'bg-emerald-600 text-white', desc: 'Scan QR · Emprunts' },
-  { label: 'Client',      email: 'client@miki.nc',  color: 'bg-amber-500 text-white',   desc: 'Dashboard lecture seule' },
+  { label: 'Responsable · Démo',   email: 'resp@demo.test',        color: 'bg-primary text-white',     desc: 'Démo Services NC · tout le parc, planning, réglages' },
+  { label: 'Technicien · Tom',     email: 'tom@demo.test',         color: 'bg-teal-600 text-white',    desc: 'Véhicules et centrales de dilution' },
+  { label: 'Technicien · Yann',    email: 'yann@demo.test',        color: 'bg-teal-500 text-white',    desc: 'Engins de nettoyage' },
+  { label: 'Client · Léa',         email: 'lea@demo.test',         color: 'bg-blue-600 text-white',    desc: 'Clinique du Lagon : suivi de ses machines' },
+  { label: 'Responsable · WDP',    email: 'responsable@wdp.test',  color: 'bg-gray-700 text-white',    desc: 'Organisation vierge pour saisir un vrai parc' },
+  { label: 'Technicien · WDP',     email: 'technicien@wdp.test',   color: 'bg-gray-500 text-white',    desc: 'Organisation vierge' },
+  { label: 'Admin plateforme',     email: 'admin@miki.nc',         color: 'bg-gray-900 text-white',    desc: 'Organisations, offres, comptes' },
 ];
 
 export const Login: React.FC<{ onLoginSuccess: (user: User) => void }> = ({ onLoginSuccess }) => {
