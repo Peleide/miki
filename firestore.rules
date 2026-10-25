@@ -13,7 +13,7 @@ service cloud.firestore {
     function isPlatformAdmin() {
       let data = getUserData();
       return (data.get('tenantsAccess', {}).get('platform', '') == 'ADMIN') || 
-             (data.accessibleTenantIds is list && data.accessibleTenantIds.hasAny(['platform']));
+             data.get('accessibleTenantIds', []).hasAny(['platform']);
     }
 
     // Vérifie si l'utilisateur a accès au Tenant demandé
@@ -21,7 +21,7 @@ service cloud.firestore {
     function hasTenantAccess(tenantId) {
       let userData = getUserData();
       return (tenantId in userData.get('tenantsAccess', {})) || 
-             (userData.accessibleTenantIds is list && userData.accessibleTenantIds.hasAny([tenantId])) ||
+             userData.get('accessibleTenantIds', []).hasAny([tenantId]) ||
              isPlatformAdmin();
     }
 
