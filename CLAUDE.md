@@ -105,7 +105,7 @@ cd functions && npm run build && cd ..
 
 # 2. Lancer les émulateurs Firebase
 firebase emulators:start
-# Auth:9099 | Functions:5001 | Firestore:8080 | Storage:9199 | UI:4000
+# Auth:9099 | Functions:5001 | Firestore:8085 | Storage:9199 | UI:4000
 
 # 3. Seeder les données de test (premier démarrage ou reset)
 node scripts/seedEmulator.mjs

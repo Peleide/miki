@@ -61,7 +61,7 @@ npm install
 # 2. Dépendances et compilation Cloud Functions
 cd functions && npm install && npm run build && cd ..
 
-# 3. Émulateurs Firebase (Auth:9099, Functions:5001, Firestore:8080)
+# 3. Émulateurs Firebase (Auth:9099, Functions:5001, Firestore:8085)
 firebase emulators:start
 
 # 4. Frontend (autre terminal)

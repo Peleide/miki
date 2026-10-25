@@ -8,7 +8,7 @@
  *  - une organisation vierge « Test WDP » (offre Pro, kits véhicules + nettoyage) pour saisir un vrai parc ;
  *  - un administrateur plateforme admin@miki.nc.
  */
-process.env.FIRESTORE_EMULATOR_HOST = process.env.FIRESTORE_EMULATOR_HOST || '127.0.0.1:8080';
+process.env.FIRESTORE_EMULATOR_HOST = process.env.FIRESTORE_EMULATOR_HOST || '127.0.0.1:8085';
 process.env.FIREBASE_AUTH_EMULATOR_HOST = process.env.FIREBASE_AUTH_EMULATOR_HOST || '127.0.0.1:9099';
 
 import { createRequire } from 'module';
