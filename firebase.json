@@ -56,19 +56,16 @@
     ],
     "rewrites": [
       {
+        "source": "/csp",
+        "destination": "/csp/index.html"
+      },
+      {
         "source": "/csp/**",
         "destination": "/csp/index.html"
       },
       {
         "source": "**",
         "destination": "/index.html"
-      }
-    ],
-    "redirects": [
-      {
-        "source": "/csp",
-        "destination": "/csp/",
-        "type": 301
       }
     ],
     "headers": [
