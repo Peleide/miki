@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.gmaoSetPlan = exports.gmaoCreateOrganization = exports.gmaoDailyPreventiveScan = exports.gmaoPublic = exports.gmaoAction = exports.nukePlatform = exports.repairAdminProfile = exports.seedSystem = exports.manageSignalement = exports.manageVisitSession = exports.manageCdilUnit = exports.manageEquipmentType = exports.submitChecklistAnswers = exports.manageChecklist = exports.submitReport = exports.manageSite = exports.manageStructure = exports.manageEquipment = exports.manageUser = exports.deleteEquipmentLog = exports.processEquipmentScan = void 0;
+exports.gmaoSetPlan = exports.gmaoCreateOrganization = exports.gmaoDailyPreventiveScan = exports.gmaoPublic = exports.gmaoAction = exports.nukePlatform = exports.repairAdminProfile = exports.seedSystem = exports.manageSignalement = exports.manageVisitSession = exports.manageCdilUnit = exports.manageEquipmentType = exports.submitChecklistAnswers = exports.manageChecklist = exports.submitReport = exports.manageSite = exports.manageStructure = exports.manageEquipment = exports.gmaoManageUser = exports.manageUser = exports.deleteEquipmentLog = exports.processEquipmentScan = void 0;
 const functions = require("firebase-functions/v1");
 const admin = require("firebase-admin");
 const firestore_1 = require("firebase-admin/firestore");
@@ -321,9 +321,7 @@ exports.deleteEquipmentLog = functions
 });
 // --- GESTION UTILISATEURS ---
 // Le code manageUser existant reste valide car il gère des attributs génériques
-exports.manageUser = functions
-    .region("australia-southeast1")
-    .https.onCall(async (data, context) => {
+async function manageUserHandler(data, context) {
     if (!context.auth)
         throw new functions.https.HttpsError("unauthenticated", "Auth required.");
     const { action, tenantId, userData, targetUserId } = data;
@@ -452,6 +450,24 @@ exports.manageUser = functions
         return { success: true };
     }
     return { success: false };
+}
+exports.manageUser = functions
+    .region("australia-southeast1")
+    .https.onCall(manageUserHandler);
+/** Organisation GMAO uniquement : l'appli historique (racine du site) garde ses propres fonctions. */
+async function requireGmaoTenant(tenantId) {
+    if (typeof tenantId !== "string" || !tenantId || tenantId === "platform")
+        throw new functions.https.HttpsError("invalid-argument", "Organisation invalide.");
+    const t = await db.collection("tenants").doc(tenantId).get();
+    if (!t.exists || t.data()?.modules?.gmao !== true)
+        throw new functions.https.HttpsError("failed-precondition", "Cette organisation n'utilise pas le module GMAO.");
+}
+/** Comptes des organisations GMAO (quotas de l'offre, rattachement des comptes clients). */
+exports.gmaoManageUser = functions
+    .region("australia-southeast1")
+    .https.onCall(async (data, context) => {
+    await requireGmaoTenant(data?.tenantId);
+    return manageUserHandler(data, context);
 });
 exports.manageEquipment = functions
     .region("australia-southeast1")
@@ -1144,8 +1160,7 @@ exports.gmaoAction = functions
     if (!context.auth)
         throw new functions.https.HttpsError("unauthenticated", "Connexion requise.");
     const { tenantId, action, payload } = data || {};
-    if (!tenantId || tenantId === "platform")
-        throw new functions.https.HttpsError("invalid-argument", "Organisation invalide.");
+    await requireGmaoTenant(tenantId);
     const { user, isGlobalAdmin } = await verifyAccess(context.auth.uid, tenantId, ["ADMIN", "TECHNICIAN", "AGENT", "CLIENT"]);
     const mikiRole = isGlobalAdmin ? "ADMIN" : (user.tenantsAccess?.[tenantId] || user.role);
     const role = model_1.ROLE_FROM_MIKI[mikiRole] || "CLIENT";
@@ -1172,6 +1187,17 @@ exports.gmaoAction = functions
 async function storePublicPhotos(tenantId, token, photos) {
     const out = [];
     const bucket = admin.storage().bucket();
+    try {
+        const [exists] = await bucket.exists();
+        if (!exists) {
+            console.warn("[GMAO] Storage non activé : photos du signalement public ignorées");
+            return out;
+        }
+    }
+    catch (err) {
+        console.warn("[GMAO] Storage indisponible", err);
+        return out;
+    }
     for (const p of (Array.isArray(photos) ? photos : []).slice(0, 3)) {
         const m = typeof p === "string" && p.match(/^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$/);
         if (!m)

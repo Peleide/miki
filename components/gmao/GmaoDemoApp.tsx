@@ -3,6 +3,7 @@ import { Wrench, ClipboardCheck, ChevronDown, Building2, Smartphone, Loader2 } f
 import { GmaoShell } from './GmaoShell';
 import { PublicReportPage } from './PublicReportPage';
 import { DEMO_ORG, demoBackend, demoPublicBackend, demoUsers, getDemoEngine } from '../../services/gmao/demoBackend';
+import { APP_BASE } from '../../services/gmao/backend';
 import { COLL, GmaoUser, ROLE_LABEL, qrPath, tokenFromScan } from '../../functions/src/gmao/model';
 import { Logo } from '../Logo';
 
@@ -41,7 +42,7 @@ export const GmaoDemoApp: React.FC = () => {
   };
 
   if (publicToken) {
-    return <PublicReportPage backend={demoPublicBackend()} token={publicToken} staffHref={`/?demo&open=${publicToken}`} />;
+    return <PublicReportPage backend={demoPublicBackend()} token={publicToken} staffHref={`${APP_BASE}/?demo&open=${publicToken}`} />;
   }
   if (!users) return <div className="min-h-[100dvh] flex items-center justify-center"><Loader2 className="animate-spin text-primary/50" size={36} /></div>;
 
@@ -64,7 +65,7 @@ export const GmaoDemoApp: React.FC = () => {
               );
             })}
             {sampleToken && (
-              <a href={`${qrPath(sampleToken)}?demo`} className="text-left bg-white border border-dashed border-border rounded-[24px] p-5 hover:border-primary/50 hover:shadow-md transition-all sm:col-span-2 flex items-start gap-4">
+              <a href={`${APP_BASE}${qrPath(sampleToken)}?demo`} className="text-left bg-white border border-dashed border-border rounded-[24px] p-5 hover:border-primary/50 hover:shadow-md transition-all sm:col-span-2 flex items-start gap-4">
                 <Smartphone className="text-primary shrink-0" size={28} />
                 <div>
                   <div className="font-black text-dark">Téléphone sans application</div>

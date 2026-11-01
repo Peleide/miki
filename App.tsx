@@ -18,6 +18,7 @@ import { Loader2, QrCode } from 'lucide-react';
 import { GmaoShell } from './components/gmao/GmaoShell';
 import { PublicReportPage } from './components/gmao/PublicReportPage';
 import { firebaseBackend, firebasePublicBackend } from './services/gmao/firebaseBackend';
+import { APP_BASE } from './services/gmao/backend';
 import { GmaoRole, ROLE_FROM_MIKI, tokenFromScan } from './functions/src/gmao/model';
 
 // QR code d'une machine : /q/<jeton>. Sans session → formulaire public ; avec session → fiche de la machine.
@@ -202,7 +203,7 @@ function App() {
   }
 
   if (!user) {
-    if (QR_TOKEN) return <PublicReportPage backend={firebasePublicBackend()} token={QR_TOKEN} staffHref={`/?open=${QR_TOKEN}`} />;
+    if (QR_TOKEN) return <PublicReportPage backend={firebasePublicBackend()} token={QR_TOKEN} staffHref={`${APP_BASE}/?open=${QR_TOKEN}`} />;
     return <Login onLoginSuccess={() => {}} />; 
   }
 

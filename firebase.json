@@ -56,8 +56,39 @@
     ],
     "rewrites": [
       {
+        "source": "/csp/**",
+        "destination": "/csp/index.html"
+      },
+      {
         "source": "**",
         "destination": "/index.html"
+      }
+    ],
+    "redirects": [
+      {
+        "source": "/csp",
+        "destination": "/csp/",
+        "type": 301
+      }
+    ],
+    "headers": [
+      {
+        "source": "/csp/index.html",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-cache"
+          }
+        ]
+      },
+      {
+        "source": "/index.html",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-cache"
+          }
+        ]
       }
     ]
   }

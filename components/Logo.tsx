@@ -19,7 +19,7 @@ export const Logo: React.FC<LogoProps> = ({
       {/* Container for branding */}
       <div className="flex items-center gap-3 h-full">
         {/* MIKI Icon Squircle - Constante visuelle */}
-        <img src="/logo.png" className="h-[120%] w-auto drop-shadow-sm shrink-0 rounded-[28px] object-contain" alt="MIKI" />
+        <img src={`${import.meta.env.BASE_URL}logo.png`} className="h-[120%] w-auto drop-shadow-sm shrink-0 rounded-[28px] object-contain" alt="MIKI" />
 
         {tenantLogoUrl && (
           <>

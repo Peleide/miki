@@ -88,6 +88,15 @@ règles Firestore limitent un client à ses machines (`firestore.rules`).
   retard en juillet pour juin → prochaine en août) ; ancrage « dates fixes » ou « depuis la réalisation » ; compteur :
   depuis le relevé ou paliers fixes.
 
+### Production (https://miki-suivi-materiel.web.app/csp/)
+Même projet Firebase que l'appli historique (branche `main`, servie à la racine, utilisée par Clean and Tech en rôle
+MANAGER). Pour ne rien casser : build `main` à la racine de `dist/` et build `gmao` avec `VITE_BASE=/csp/` dans
+`dist/csp/` (script `scripts/deploy-prod.ps1`). On ne déploie **que** les fonctions `gmao*` (dont `gmaoManageUser`,
+copie de `manageUser` réservée aux organisations `modules.gmao`) : les fonctions historiques restent celles de `main`.
+`firestore.rules` = règles de `main` + ajouts GMAO (aucun changement pour les comptes sans `gmaoClientIds`).
+QR en prod : `/csp/q/<jeton>` (`APP_BASE`). Storage n'est pas activé sur le projet : photos indisponibles tant qu'il
+ne l'est pas (les signalements publics passent quand même, sans photo).
+
 ### Hors périmètre
 Stock, achats, coûts et indicateurs avancés (MTBF, MTTR) retirés volontairement, interfaces externes, hors-ligne.
 Facturation des offres : manuelle.

@@ -4,7 +4,7 @@ import { Actor, Ctx, handleGmaoAction, handlePublicAction, runPreventiveScan } f
 import { memoryStore, emptyState, MemoryState } from '../../functions/src/gmao/memoryStore';
 import { seedDemo } from '../../functions/src/gmao/seed';
 import { CLIENT_SCOPED, COLL, CollName, GmaoNotification, GmaoUser, SHARED_COLLS, planOf, withDefaults } from '../../functions/src/gmao/model';
-import { GmaoBackend, PublicBackend, compressImage } from './backend';
+import { APP_BASE, GmaoBackend, PublicBackend, compressImage } from './backend';
 
 const STORAGE_KEY = 'miki_gmao_demo_v2';
 export const DEMO_ORG = 'Démo Services NC';
@@ -165,7 +165,7 @@ export function demoBackend(actor: Actor): GmaoBackend {
       // Documents (PDF…) : conservés le temps de la session uniquement
       return URL.createObjectURL(file);
     },
-    publicOrigin: () => window.location.origin,
+    publicOrigin: () => window.location.origin + APP_BASE,
     accounts: {
       async list() {
         await eng.ready;

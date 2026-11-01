@@ -4,7 +4,7 @@ import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage
 import { dbFirestore, functions, storage } from '../firebaseConfig';
 import { db } from '../db';
 import { CLIENT_SCOPED, COLL, GmaoRole, GmaoUser, MIKI_FROM_ROLE, ROLE_FROM_MIKI, SHARED_COLLS, withDefaults } from '../../functions/src/gmao/model';
-import { Account, GmaoBackend, PublicBackend, compressImage } from './backend';
+import { APP_BASE, Account, GmaoBackend, PublicBackend, compressImage } from './backend';
 
 export interface FirebaseIdentity {
   tenantId: string;
@@ -19,7 +19,7 @@ const errMsg = (e: any) => new Error(e?.message || 'Erreur de communication avec
 export function firebaseBackend(me: FirebaseIdentity): GmaoBackend {
   const { tenantId } = me;
   const fn = httpsCallable(functions, 'gmaoAction');
-  const manageUser = httpsCallable(functions, 'manageUser');
+  const manageUser = httpsCallable(functions, 'gmaoManageUser');
   const isClient = me.role === 'CLIENT';
 
   return {
@@ -79,7 +79,7 @@ export function firebaseBackend(me: FirebaseIdentity): GmaoBackend {
       await uploadBytes(ref, blob, { contentType: isImage ? 'image/jpeg' : file.type });
       return getDownloadURL(ref);
     },
-    publicOrigin: () => window.location.origin,
+    publicOrigin: () => window.location.origin + APP_BASE,
     accounts: {
       async list(): Promise<Account[]> {
         const snap = await getDocs(query(collection(dbFirestore, 'users'), where('accessibleTenantIds', 'array-contains', tenantId)));

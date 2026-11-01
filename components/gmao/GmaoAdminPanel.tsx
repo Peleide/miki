@@ -26,7 +26,7 @@ export const GmaoAdminPanel: React.FC<{ tenants: any[]; onChanged: () => void; t
         limits: f.tier === 'SUR_MESURE' ? { maxTechnicians: f.maxTechnicians, maxAssets: f.maxAssets, maxClients: f.maxClients } : undefined,
       });
       if (f.email.trim()) {
-        const u: any = await httpsCallable(functions, 'manageUser')({ action: 'CREATE', tenantId: res.data.id, userData: { email: f.email.trim(), firstName: f.firstName.trim(), lastName: f.lastName.trim(), role: 'TECHNICIAN' } });
+        const u: any = await httpsCallable(functions, 'gmaoManageUser')({ action: 'CREATE', tenantId: res.data.id, userData: { email: f.email.trim(), firstName: f.firstName.trim(), lastName: f.lastName.trim(), role: 'TECHNICIAN' } });
         setCreated({ email: f.email.trim(), password: u.data?.password || '' });
       }
       toast('Organisation GMAO créée.', 'success');

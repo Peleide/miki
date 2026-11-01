@@ -354,9 +354,7 @@ export const deleteEquipmentLog = functions
 
 // --- GESTION UTILISATEURS ---
 // Le code manageUser existant reste valide car il gère des attributs génériques
-export const manageUser = functions
-  .region("australia-southeast1")
-  .https.onCall(async (data, context) => {
+async function manageUserHandler(data: any, context: functions.https.CallableContext) {
     if (!context.auth) throw new functions.https.HttpsError("unauthenticated", "Auth required.");
 
     const { action, tenantId, userData, targetUserId } = data;
@@ -491,6 +489,25 @@ export const manageUser = functions
     }
 
     return { success: false };
+}
+
+export const manageUser = functions
+  .region("australia-southeast1")
+  .https.onCall(manageUserHandler);
+
+/** Organisation GMAO uniquement : l'appli historique (racine du site) garde ses propres fonctions. */
+async function requireGmaoTenant(tenantId: unknown) {
+  if (typeof tenantId !== "string" || !tenantId || tenantId === "platform") throw new functions.https.HttpsError("invalid-argument", "Organisation invalide.");
+  const t = await db.collection("tenants").doc(tenantId).get();
+  if (!t.exists || t.data()?.modules?.gmao !== true) throw new functions.https.HttpsError("failed-precondition", "Cette organisation n'utilise pas le module GMAO.");
+}
+
+/** Comptes des organisations GMAO (quotas de l'offre, rattachement des comptes clients). */
+export const gmaoManageUser = functions
+  .region("australia-southeast1")
+  .https.onCall(async (data, context) => {
+    await requireGmaoTenant(data?.tenantId);
+    return manageUserHandler(data, context);
   });
 
 export const manageEquipment = functions
@@ -1233,7 +1250,7 @@ export const gmaoAction = functions
   .https.onCall(async (data, context) => {
     if (!context.auth) throw new functions.https.HttpsError("unauthenticated", "Connexion requise.");
     const { tenantId, action, payload } = data || {};
-    if (!tenantId || tenantId === "platform") throw new functions.https.HttpsError("invalid-argument", "Organisation invalide.");
+    await requireGmaoTenant(tenantId);
     const { user, isGlobalAdmin } = await verifyAccess(context.auth.uid, tenantId, ["ADMIN", "TECHNICIAN", "AGENT", "CLIENT"]);
     const mikiRole = isGlobalAdmin ? "ADMIN" : (user.tenantsAccess?.[tenantId] || user.role);
     const role = ROLE_FROM_MIKI[mikiRole] || "CLIENT";
@@ -1259,6 +1276,10 @@ export const gmaoAction = functions
 async function storePublicPhotos(tenantId: string, token: string, photos: any[]): Promise<string[]> {
   const out: string[] = [];
   const bucket = admin.storage().bucket();
+  try {
+    const [exists] = await bucket.exists();
+    if (!exists) { console.warn("[GMAO] Storage non activé : photos du signalement public ignorées"); return out; }
+  } catch (err) { console.warn("[GMAO] Storage indisponible", err); return out; }
   for (const p of (Array.isArray(photos) ? photos : []).slice(0, 3)) {
     const m = typeof p === "string" && p.match(/^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$/);
     if (!m) continue;

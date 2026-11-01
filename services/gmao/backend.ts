@@ -76,3 +76,6 @@ export async function toDataUrl(file: File, maxSize = 1024, quality = 0.7): Prom
     r.readAsDataURL(blob);
   });
 }
+
+/** Chemin de publication de l'application (« /csp » en production, vide en local). */
+export const APP_BASE = (import.meta.env.BASE_URL || '/').replace(/\/$/, '');
