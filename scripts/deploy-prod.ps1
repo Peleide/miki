@@ -26,7 +26,7 @@ npx vite build --outDir (Join-Path $repo "dist\csp") --emptyOutDir
 if ($LASTEXITCODE -ne 0) { throw "build gmao a echoue" }
 Remove-Item Env:\VITE_BASE
 $manifestPath = Join-Path $repo "dist\csp\manifest.json"
-$m = Get-Content $manifestPath -Raw | ConvertFrom-Json
+$m = Get-Content $manifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
 $m.name = "MIKI - Maintenance"; $m.start_url = "/csp/"; $m | Add-Member -NotePropertyName scope -NotePropertyValue "/csp/" -Force
 $m.icons | ForEach-Object { $_.src = "/csp/logo.png" }
 [IO.File]::WriteAllText($manifestPath, ($m | ConvertTo-Json -Depth 5))
