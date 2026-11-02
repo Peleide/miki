@@ -48,7 +48,7 @@ export const GmaoDemoApp: React.FC = () => {
 
   if (!persona || !backend) {
     return (
-      <div className="min-h-[100dvh] bg-background flex items-center justify-center p-4">
+      <div className="h-[100dvh] overflow-y-auto bg-background flex items-center justify-center p-4">
         <div className="w-full max-w-3xl">
           <div className="flex items-center gap-3 mb-8"><Logo className="h-10" showText={false} /><div><div className="text-xl font-black text-dark">Miki GMAO · démonstration</div><div className="text-sm text-gray-500">{DEMO_ORG} : données fictives, stockées dans ce navigateur.</div></div></div>
           <div className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-3">Choisissez un profil</div>

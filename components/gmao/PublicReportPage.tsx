@@ -57,7 +57,7 @@ export const PublicReportPage: React.FC<{ backend: PublicBackend; token: string;
   };
 
   const shell = (children: React.ReactNode) => (
-    <div className="min-h-[100dvh] bg-background">
+    <div className="h-[100dvh] overflow-y-auto overscroll-contain bg-background">
       <div className="max-w-md mx-auto px-4 py-6">
         <div className="flex items-center gap-3 mb-5">
           <Logo className="h-8" showText={false} />
