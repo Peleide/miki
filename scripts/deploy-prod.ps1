@@ -1,7 +1,7 @@
-# Mise en production : appli historique (branche main) a la racine + GMAO (branche gmao) sous /csp/.
+# Mise en production : appli historique (branche legacy, Clean and Tech) a la racine + GMAO (branche main) sous /csp/.
 # Usage : .\scripts\deploy-prod.ps1            (build seulement, dans dist/)
 #         .\scripts\deploy-prod.ps1 -Deploy    (build puis deploiement Firebase)
-param([switch]$Deploy, [string]$MainRef = "origin/main")
+param([switch]$Deploy, [string]$LegacyRef = "origin/legacy")
 $ErrorActionPreference = "Stop"
 $repo = Split-Path -Parent $PSScriptRoot
 $work = Join-Path (Split-Path -Parent $repo) "miki-main-build"
@@ -11,16 +11,16 @@ git fetch -q origin
 # 1. Appli historique, telle qu'elle est en prod aujourd'hui
 if (Test-Path $work) { git worktree remove --force $work 2>$null; if (Test-Path $work) { Remove-Item -Recurse -Force $work } }
 git worktree prune
-git worktree add --detach $work $MainRef | Out-Null
+git worktree add --detach $work $LegacyRef | Out-Null
 Get-ChildItem -Path $repo -Filter ".env*" -File -ErrorAction SilentlyContinue | Copy-Item -Destination $work
 Push-Location $work
 npm ci --no-audit --no-fund
-if ($LASTEXITCODE -ne 0) { throw "npm ci (main) a echoue" }
+if ($LASTEXITCODE -ne 0) { throw "npm ci (legacy) a echoue" }
 npx vite build --outDir (Join-Path $repo "dist") --emptyOutDir
-if ($LASTEXITCODE -ne 0) { throw "build main a echoue" }
+if ($LASTEXITCODE -ne 0) { throw "build legacy a echoue" }
 Pop-Location
 
-# 2. GMAO sous /csp/
+# 2. GMAO (branche courante, main) sous /csp/
 $env:VITE_BASE = "/csp/"
 npx vite build --outDir (Join-Path $repo "dist\csp") --emptyOutDir
 if ($LASTEXITCODE -ne 0) { throw "build gmao a echoue" }
@@ -41,7 +41,7 @@ Write-Host "Racine :" (Select-String -Path (Join-Path $repo "dist\index.html") -
 Write-Host "/csp/  :" (Select-String -Path (Join-Path $repo "dist\csp\index.html") -Pattern 'csp/assets/index-[^"]+\.js' | ForEach-Object { $_.Matches.Value })
 
 if ($Deploy) {
-  # Uniquement les fonctions GMAO : les fonctions historiques en prod restent celles de main.
+  # Uniquement les fonctions GMAO : les fonctions historiques en prod restent celles de legacy.
   $fns = "gmaoAction,gmaoPublic,gmaoDailyPreventiveScan,gmaoCreateOrganization,gmaoSetPlan,gmaoManageUser" -split "," | ForEach-Object { "functions:$_" }
   firebase deploy --project miki-suivi-materiel --only ("firestore:rules,hosting," + ($fns -join ","))
   if ($LASTEXITCODE -ne 0) { throw "deploiement echoue" }

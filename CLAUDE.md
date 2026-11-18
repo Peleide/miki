@@ -1,11 +1,11 @@
 # MIKI — Documentation Projet
 
-> **Branche `gmao`** : GMAO multi-entreprises, vendue en offres Starter / Pro / Ultra / Sur mesure. Issue de la branche
+> **Branche `main`** (ex-`gmao`, passée en main le 19/11/2026) : GMAO multi-entreprises, vendue en offres Starter / Pro / Ultra / Sur mesure. Issue de la branche
 > `csp` (GMAO sur mesure CSP), rendue générique : tout ce qui diffère d'un client à l'autre est un **réglage** ou un
 > **kit de démarrage**, jamais un développement spécifique. L'ancienne interface Miki (emprunts, CDil) reste active pour
 > les organisations sans le module GMAO. Le reste du document décrit ce socle Miki hérité de `vivian`.
 
-## GMAO multi-entreprises (branche `gmao`)
+## GMAO multi-entreprises (branche `main`)
 
 ### Démarrer
 ```bash
@@ -89,11 +89,12 @@ règles Firestore limitent un client à ses machines (`firestore.rules`).
   depuis le relevé ou paliers fixes.
 
 ### Production (https://miki-suivi-materiel.web.app/csp/)
-Même projet Firebase que l'appli historique (branche `main`, servie à la racine, utilisée par Clean and Tech en rôle
-MANAGER). Pour ne rien casser : build `main` à la racine de `dist/` et build `gmao` avec `VITE_BASE=/csp/` dans
-`dist/csp/` (script `scripts/deploy-prod.ps1`). On ne déploie **que** les fonctions `gmao*` (dont `gmaoManageUser`,
-copie de `manageUser` réservée aux organisations `modules.gmao`) : les fonctions historiques restent celles de `main`.
-`firestore.rules` = règles de `main` + ajouts GMAO (aucun changement pour les comptes sans `gmaoClientIds`).
+Même projet Firebase que l'appli historique (branche `legacy` = ancien `main` du 07/07/2026, servie à la racine,
+utilisée par Clean and Tech en rôle MANAGER). Pour ne rien casser : build `legacy` à la racine de `dist/` et build de
+`main` avec `VITE_BASE=/csp/` dans `dist/csp/` (script `scripts/deploy-prod.ps1`). On ne déploie **que** les fonctions
+`gmao*` (dont `gmaoManageUser`, copie de `manageUser` réservée aux organisations `modules.gmao`) : les fonctions
+historiques restent celles de `legacy`. `firestore.rules` = règles de `legacy` + ajouts GMAO (aucun changement pour les
+comptes sans `gmaoClientIds`). Basculer Clean and Tech sur la GMAO = migration à part (rôle MANAGER, emprunts, CDil).
 QR en prod : `/csp/q/<jeton>` (`APP_BASE`). Storage n'est pas activé sur le projet : photos indisponibles tant qu'il
 ne l'est pas (les signalements publics passent quand même, sans photo).
 
