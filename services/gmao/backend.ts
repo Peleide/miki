@@ -4,6 +4,7 @@ export interface TenantView {
   name: string;
   plan: TenantPlan | null;
   settings: GmaoSettings;
+  modules: Record<string, boolean>;
 }
 
 export interface Account {

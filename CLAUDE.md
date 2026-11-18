@@ -88,6 +88,26 @@ règles Firestore limitent un client à ses machines (`firestore.rules`).
   retard en juillet pour juin → prochaine en août) ; ancrage « dates fixes » ou « depuis la réalisation » ; compteur :
   depuis le relevé ou paliers fixes.
 
+### Module stock (option, lot 1)
+Activé par organisation dans la console plateforme (`GmaoAdminPanel` → `gmaoSetModules` → `tenant.modules.stock`).
+Désactivé : aucune lecture, aucun menu, toute action `STOCK_*` refusée côté serveur ; les données restent en base.
+- `functions/src/gmao/stock.ts` : actions `STOCK_*` (appelées par `handleGmaoAction`), pièces d'intervention
+  (`validateParts` avant toute écriture, `consumeParts` à la clôture `WO_CLOSE` / `WO_RECORD`), états compta
+  (`stockSnapshot`, `periodRecap`, `monthBounds`). `seedStock.ts` : jeux de démo `DEMO` et `CSP`.
+- Collections : `gmaoStockItems` (quantités par emplacement `levels`, total `qty`, `avgCost` = PMP),
+  `gmaoStockLocations` (magasin → casiers, `qrToken` indexé dans `gmaoQr` avec `kind: 'STOCK'`), `gmaoStockMoves`
+  (journal MVT-AAAA-NNNN, jamais modifié ; seul `returnedQty` évolue sur une sortie).
+- Valorisation au prix moyen pondéré (recalculé à chaque entrée et retour ; sortie au PMP ; retour au prix de sa sortie).
+  Corrections par retour, transfert ou ajustement motivé. Réception « pour une intervention » = entrée + sortie liées.
+- Droits : responsable pour tout ; techniciens : sortie et retour seulement si le réglage `stockTechniciansCanTake`
+  est activé ; clients : rien (règles Firestore inchangées : le joker `tenants/{t}/…` les exclut déjà).
+- QR de casier : même URL `/q/<jeton>` ; le formulaire public refuse (« emplacement de stock ») ; appli connectée ou
+  scanner → fiche du casier (contenu théorique, sortie rapide, comptage).
+- Exports CSV : stock valorisé à date, récapitulatif mensuel (début + entrées − sorties + retours ± ajustements = fin,
+  avec l'écart d'arrondi du PMP), journal des mouvements. Import CSV : référentiel + stock d'ouverture, tout ou rien.
+- Limite connue : mises à jour des quantités sans transaction Firestore (volume faible, un seul magasinier) ; à
+  passer en transaction si plusieurs personnes sortent des pièces en même temps.
+
 ### Production (https://miki-suivi-materiel.web.app/csp/)
 Même projet Firebase que l'appli historique (branche `legacy` = ancien `main` du 07/07/2026, servie à la racine,
 utilisée par Clean and Tech en rôle MANAGER). Pour ne rien casser : build `legacy` à la racine de `dist/` et build de
@@ -99,7 +119,7 @@ QR en prod : `/csp/q/<jeton>` (`APP_BASE`). Storage n'est pas activé sur le pro
 ne l'est pas (les signalements publics passent quand même, sans photo).
 
 ### Hors périmètre
-Stock, achats, coûts et indicateurs avancés (MTBF, MTTR) retirés volontairement, interfaces externes, hors-ligne.
+Achats, coûts de main-d'œuvre et indicateurs avancés (MTBF, MTTR) retirés volontairement (le stock est un module optionnel), interfaces externes, hors-ligne.
 Facturation des offres : manuelle.
 
 ## Vue d'ensemble

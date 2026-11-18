@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
   LayoutDashboard, CalendarDays, ClipboardList, Inbox, ListChecks, Boxes, QrCode, Settings, LogOut, Bell, Menu, X,
-  Wrench, Shield, ClipboardCheck,
+  Wrench, Shield, ClipboardCheck, Package,
 } from 'lucide-react';
 import { GmaoRole, GmaoUser, ROLE_LABEL } from '../../functions/src/gmao/model';
 import { GmaoBackend } from '../../services/gmao/backend';
@@ -15,9 +15,10 @@ import { PlanningView } from './PlanningView';
 import { TerrainView } from './TerrainView';
 import { SettingsView } from './SettingsView';
 import { TrackingView } from './TrackingView';
+import { StockView, LocationDetailModal } from './StockView';
 import { Logo } from '../Logo';
 
-type View = 'accueil' | 'planning' | 'interventions' | 'signalements' | 'preventif' | 'parc' | 'suivi' | 'scanner' | 'reglages';
+type View = 'accueil' | 'planning' | 'interventions' | 'signalements' | 'preventif' | 'parc' | 'stock' | 'suivi' | 'scanner' | 'reglages';
 
 const NAV: Record<View, { label: string; short: string; icon: any }> = {
   accueil: { label: 'Tableau de bord', short: 'Accueil', icon: LayoutDashboard },
@@ -26,14 +27,15 @@ const NAV: Record<View, { label: string; short: string; icon: any }> = {
   signalements: { label: 'Signalements', short: 'Signal.', icon: Inbox },
   preventif: { label: 'Préventif', short: 'Préventif', icon: ListChecks },
   parc: { label: 'Parc', short: 'Parc', icon: Boxes },
+  stock: { label: 'Stock', short: 'Stock', icon: Package },
   suivi: { label: 'Suivi des maintenances', short: 'Suivi', icon: ClipboardCheck },
   scanner: { label: 'Scanner', short: 'Scanner', icon: QrCode },
   reglages: { label: 'Réglages', short: 'Réglages', icon: Settings },
 };
 
 const VIEWS_BY_ROLE: Record<GmaoRole, View[]> = {
-  RESPONSABLE: ['accueil', 'planning', 'interventions', 'signalements', 'parc', 'preventif', 'suivi', 'scanner', 'reglages'],
-  TECHNICIEN: ['planning', 'interventions', 'scanner', 'signalements', 'parc', 'accueil', 'preventif', 'suivi'],
+  RESPONSABLE: ['accueil', 'planning', 'interventions', 'signalements', 'parc', 'stock', 'preventif', 'suivi', 'scanner', 'reglages'],
+  TECHNICIEN: ['planning', 'interventions', 'scanner', 'signalements', 'parc', 'stock', 'accueil', 'preventif', 'suivi'],
   CLIENT: ['accueil', 'parc', 'scanner', 'suivi', 'signalements'],
 };
 const CLIENT_LABEL: Partial<Record<View, string>> = { accueil: 'Accueil', parc: 'Vos machines' };
@@ -85,17 +87,29 @@ const NotificationsBell: React.FC = () => {
   );
 };
 
-const Body: React.FC<{ view: View; setView: (v: View) => void; views: View[] } & ShellProps> = ({ view, setView, views, me, onLogout, headerExtra, openToken }) => {
+const Body: React.FC<{ view: View; setView: (v: View) => void; views: View[] } & ShellProps> = ({ view, setView, views: allViews, me, onLogout, headerExtra, openToken }) => {
   const g = useGmao();
+  // Le stock n'apparaît que si le module est activé (et, pour un technicien, s'il peut sortir des pièces).
+  const views = allViews.filter(v => v !== 'stock' || (g.stock.enabled && (g.isResp || g.stock.canTake)));
   const [moreOpen, setMoreOpen] = useState(false);
   const opened = useRef(false);
   useEffect(() => {
     if (!openToken || opened.current || g.loading) return;
-    opened.current = true;
     const a = g.assets.find(x => x.qrToken === openToken);
-    if (a) g.openAsset(a.id);
-    else g.toast('Cette machine ne fait pas partie de votre parc.', 'info');
-  }, [openToken, g.loading, g.assets]);
+    const loc = g.stock.locations.find(x => x.qrToken === openToken && !x.isArchived);
+    if (a || loc) {
+      opened.current = true;
+      if (a) g.openAsset(a.id); else g.openStockLocation(loc!.id);
+      return;
+    }
+    // Les emplacements de stock peuvent arriver après le parc : on attend un peu avant de conclure.
+    const t = setTimeout(() => {
+      if (opened.current) return;
+      opened.current = true;
+      g.toast('Ce QR code ne correspond à rien dans votre parc.', 'info');
+    }, 2500);
+    return () => clearTimeout(t);
+  }, [openToken, g.loading, g.assets, g.stock.locations]);
 
   const label = (v: View) => (me.role === 'CLIENT' && CLIENT_LABEL[v]) || NAV[v].label;
   const pending = g.requests.filter(r => r.status === 'A_TRAITER' && (!g.isTech || g.mine(g.assetById(r.assetId)))).length;
@@ -150,6 +164,7 @@ const Body: React.FC<{ view: View; setView: (v: View) => void; views: View[] } &
           {view === 'signalements' && <RequestsView />}
           {view === 'preventif' && <PreventiveView />}
           {view === 'parc' && <AssetsView />}
+          {view === 'stock' && (views.includes('stock') ? <StockView /> : <div className="py-10 text-center text-sm text-gray-400">Le module stock n’est pas activé pour votre compte.</div>)}
           {view === 'suivi' && <TrackingView />}
           {view === 'scanner' && <TerrainView />}
           {view === 'reglages' && <SettingsView />}
@@ -182,7 +197,7 @@ export const GmaoShell: React.FC<ShellProps> = (props) => {
     } catch { /* stockage indisponible */ }
     return views[0];
   });
-  const [modal, setModal] = useState<{ type: 'asset' | 'wo' | 'req'; id: string } | null>(null);
+  const [modal, setModal] = useState<{ type: 'asset' | 'wo' | 'req' | 'stockloc'; id: string } | null>(null);
 
   useEffect(() => { if (!views.includes(view)) setViewState(views[0]); }, [props.me.role]);
 
@@ -201,11 +216,13 @@ export const GmaoShell: React.FC<ShellProps> = (props) => {
       openAsset={id => setModal({ type: 'asset', id })}
       openWorkOrder={id => setModal({ type: 'wo', id })}
       openRequest={id => setModal({ type: 'req', id })}
+      openStockLocation={id => setModal({ type: 'stockloc', id })}
     >
       <Body {...props} view={view} setView={setView} views={views} />
       {modal?.type === 'asset' && <AssetDetailModal key={modal.id} id={modal.id} onClose={() => setModal(null)} />}
       {modal?.type === 'wo' && <WorkOrderDetailModal key={modal.id} id={modal.id} onClose={() => setModal(null)} />}
       {modal?.type === 'req' && <RequestDetailModal key={modal.id} id={modal.id} onClose={() => setModal(null)} />}
+      {modal?.type === 'stockloc' && <LocationDetailModal key={modal.id} id={modal.id} onClose={() => setModal(null)} />}
     </GmaoProvider>
   );
 };

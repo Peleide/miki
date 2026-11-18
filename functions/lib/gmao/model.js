@@ -3,7 +3,7 @@
 // Fichier partagé : importé par les Cloud Functions ET par le front (mode démo inclus).
 // Ne doit dépendre d'aucune librairie (ni firebase-admin, ni React).
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.qrPath = exports.SHARED_COLLS = exports.CLIENT_SCOPED = exports.COLL = exports.DEFAULT_SETTINGS = exports.TASK_KIND_LABEL = exports.OPEN_WORK_ORDER_STATUSES = exports.WORK_ORDER_STATUS_LABEL = exports.KIND_LABEL = exports.OPEN_REQUEST_STATUSES = exports.REQUEST_STATUS_LABEL = exports.priorityLabel = exports.DEFAULT_PRIORITY_DELAYS = exports.PRIORITY_WORD = exports.PRIORITIES = exports.STATE_LABEL = exports.LEVEL_LABEL = exports.DEFAULT_INTERVENTION_TYPES = exports.METER_LABEL = exports.METER_UNIT = exports.planOf = exports.PLANS = exports.ROLE_LABEL = exports.MIKI_FROM_ROLE = exports.ROLE_FROM_MIKI = void 0;
+exports.STOCK_UNITS = exports.STOCK_MOVE_LABEL = exports.qrPath = exports.SHARED_COLLS = exports.CLIENT_SCOPED = exports.COLL = exports.DEFAULT_SETTINGS = exports.TASK_KIND_LABEL = exports.OPEN_WORK_ORDER_STATUSES = exports.WORK_ORDER_STATUS_LABEL = exports.KIND_LABEL = exports.OPEN_REQUEST_STATUSES = exports.REQUEST_STATUS_LABEL = exports.priorityLabel = exports.DEFAULT_PRIORITY_DELAYS = exports.PRIORITY_WORD = exports.PRIORITIES = exports.STATE_LABEL = exports.LEVEL_LABEL = exports.DEFAULT_INTERVENTION_TYPES = exports.METER_LABEL = exports.METER_UNIT = exports.planOf = exports.PLANS = exports.ROLE_LABEL = exports.MIKI_FROM_ROLE = exports.ROLE_FROM_MIKI = void 0;
 exports.delayLabel = delayLabel;
 exports.withDefaults = withDefaults;
 exports.tokenFromScan = tokenFromScan;
@@ -94,6 +94,7 @@ exports.DEFAULT_SETTINGS = {
     priorityDelays: { ...exports.DEFAULT_PRIORITY_DELAYS },
     interventionTypes: [...exports.DEFAULT_INTERVENTION_TYPES],
     utcOffsetMinutes: 660,
+    stockTechniciansCanTake: false,
 };
 function withDefaults(s) {
     const v = { ...exports.DEFAULT_SETTINGS, ...(s || {}) };
@@ -113,6 +114,9 @@ exports.COLL = {
     clients: 'gmaoClients',
     checklists: 'checklists',
     sites: 'sites',
+    stockItems: 'gmaoStockItems',
+    stockLocations: 'gmaoStockLocations',
+    stockMoves: 'gmaoStockMoves',
 };
 /** Collections qu'un compte client peut lire (filtrées sur son clientId). */
 exports.CLIENT_SCOPED = [exports.COLL.assets, exports.COLL.assetEvents, exports.COLL.requests, exports.COLL.workOrders];
@@ -125,4 +129,8 @@ function tokenFromScan(text) {
     const m = String(text || '').trim().match(/\/q\/([A-Za-z0-9_-]{8,64})/);
     return m ? m[1] : null;
 }
+exports.STOCK_MOVE_LABEL = {
+    ENTREE: 'Entrée', SORTIE: 'Sortie', RETOUR: 'Retour', TRANSFERT: 'Transfert', AJUSTEMENT: 'Ajustement',
+};
+exports.STOCK_UNITS = ['pièce', 'litre', 'kg', 'mètre', 'lot', 'boîte', 'jeu'];
 //# sourceMappingURL=model.js.map

@@ -3,10 +3,11 @@
 import { Actor, Ctx, handleGmaoAction, handlePublicAction, runPreventiveScan } from '../../functions/src/gmao/core';
 import { memoryStore, emptyState, MemoryState } from '../../functions/src/gmao/memoryStore';
 import { seedDemo } from '../../functions/src/gmao/seed';
+import { seedStockDemo } from '../../functions/src/gmao/seedStock';
 import { CLIENT_SCOPED, COLL, CollName, GmaoNotification, GmaoUser, SHARED_COLLS, planOf, withDefaults } from '../../functions/src/gmao/model';
 import { APP_BASE, GmaoBackend, PublicBackend, compressImage } from './backend';
 
-const STORAGE_KEY = 'miki_gmao_demo_v2';
+const STORAGE_KEY = 'miki_gmao_demo_v3';
 export const DEMO_ORG = 'Démo Services NC';
 
 const BASE_USERS: GmaoUser[] = [
@@ -52,6 +53,8 @@ class DemoEngine {
     base.seededAt = new Date().toISOString();
     const store = memoryStore(base);
     await seedDemo(store, { responsable: base.users[0], techniciens: [base.users[1], base.users[2]], client: base.users[3] }, new Date(), cid => { base.users[3].clientId = cid; });
+    base.modules = { stock: true };
+    await seedStockDemo(store, { responsable: { ...base.users[0], role: 'RESPONSABLE' }, techniciens: [] }, new Date(), 'DEMO');
     this.state = base;
     this.persist();
     if (notify) this.emitAll();
@@ -135,7 +138,7 @@ export function demoBackend(actor: Actor): GmaoBackend {
       return () => { active = false; off(); };
     },
     subscribeTenant(cb) {
-      const push = () => cb({ name: eng.state.tenantName, plan: eng.state.plan, settings: withDefaults(eng.state.settings) });
+      const push = () => cb({ name: eng.state.tenantName, plan: eng.state.plan, settings: withDefaults(eng.state.settings), modules: { ...(eng.state.modules || {}) } });
       eng.ready.then(push);
       return eng.on('settings', push);
     },

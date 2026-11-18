@@ -27,7 +27,7 @@ function memoryStore(state, onChange) {
         async getSettings() { return (0, model_1.withDefaults)(state.settings); },
         async saveSettings(s) { state.settings = copy(s); onChange?.('settings'); },
         async getUsers() { return copy(state.users); },
-        async getTenantInfo() { return { name: state.tenantName || 'Démo', plan: state.plan ? copy(state.plan) : null }; },
+        async getTenantInfo() { return { name: state.tenantName || 'Démo', plan: state.plan ? copy(state.plan) : null, modules: { ...(state.modules || {}) } }; },
         async registerQr() { },
     };
 }

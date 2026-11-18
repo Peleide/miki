@@ -13,10 +13,11 @@ import {
 } from './rules';
 import { civilOf, isoOf, normalizeRecurrence } from './recurrence';
 import { kitById } from './kits';
+import { STOCK_ACTIONS, consumeParts, handleStockAction, validateParts } from './stock';
 
 // ─── Abstraction de stockage ────────────────────────────────────────────────
 
-export interface TenantInfo { name: string; plan: TenantPlan | null }
+export interface TenantInfo { name: string; plan: TenantPlan | null; modules?: Record<string, boolean> }
 
 export interface GmaoStore {
   get<T>(coll: CollName, id: string): Promise<T | null>;
@@ -31,7 +32,7 @@ export interface GmaoStore {
   getUsers(): Promise<GmaoUser[]>;
   getTenantInfo(): Promise<TenantInfo>;
   /** Index global jeton QR → machine (permet de retrouver l'organisation depuis l'URL publique). */
-  registerQr(token: string, assetId: string): Promise<void>;
+  registerQr(token: string, id: string, kind?: 'ASSET' | 'STOCK'): Promise<void>;
 }
 
 export interface Actor {
@@ -387,6 +388,7 @@ async function closeWorkOrder(ctx: Ctx, wo: WorkOrder, p: any) {
   }
   const assetStateAfter: AssetState = isState(p.assetStateAfter) ? p.assetStateAfter : 'OPERATIONNEL';
   const asset = await getAsset(ctx, wo.assetId);
+  const parts = await validateParts(ctx, p.parts);
   const meterAtClose = num(p.meterAtClose);
   if (meterAtClose != null && asset.meterType && (asset.meterValue == null || meterAtClose > asset.meterValue)) {
     await addMeterReading(ctx, asset, meterAtClose, wo.id);
@@ -403,6 +405,7 @@ async function closeWorkOrder(ctx: Ctx, wo: WorkOrder, p: any) {
     assetStateAfter,
     closedAt: ctx.now.toISOString(), closedById: ctx.actor.id, closedByName: ctx.actor.name,
   }));
+  if (parts.length) await consumeParts(ctx, parts, wo);
   const stateReason = assetStateAfter === 'OPERATIONNEL' ? null : ((p.assetStateReason || '').trim() || `Suite ${wo.number}`);
   await setAssetState(ctx, asset, assetStateAfter, stateReason, wo.id);
   if (!asset.lastMaintenanceAt || asset.lastMaintenanceAt < actualEnd) await ctx.store.update(COLL.assets, asset.id, { lastMaintenanceAt: actualEnd });
@@ -619,7 +622,13 @@ export async function handlePublicAction(ctx: Ctx, action: string, p: any): Prom
   p = p || {};
   const { store, now } = ctx;
   const asset = await assetByToken(store, p.token);
-  if (!asset) fail('not-found', 'Ce QR code ne correspond à aucune machine active.');
+  if (!asset) {
+    const token = String(p.token || '');
+    if (/^[A-Za-z0-9_-]{8,64}$/.test(token) && (await store.list<any>(COLL.stockLocations)).some(l => l.qrToken === token && !l.isArchived)) {
+      fail('failed-precondition', "Ce QR code identifie un emplacement de stock : il s'ouvre depuis l'application Miki, avec un compte.");
+    }
+    fail('not-found', 'Ce QR code ne correspond à aucune machine active.');
+  }
   const settings = await settingsOf(ctx);
   const tenant = await store.getTenantInfo();
   const [sites, typologies, clients] = await Promise.all([
@@ -683,6 +692,7 @@ export async function handlePublicAction(ctx: Ctx, action: string, p: any): Prom
 // ─── Point d'entrée ─────────────────────────────────────────────────────────
 
 export async function handleGmaoAction(ctx: Ctx, action: string, p: any): Promise<any> {
+  if (STOCK_ACTIONS.includes(action)) return handleStockAction(ctx, action, p);
   if (!PERMISSIONS[action]) fail('invalid-argument', `Action inconnue : ${action}`);
   if (!canDo(ctx.actor.role, action)) fail('permission-denied', 'Action non autorisée pour votre profil.');
   p = p || {};
@@ -988,6 +998,7 @@ export async function handleGmaoAction(ctx: Ctx, action: string, p: any): Promis
     case 'WO_RECORD': {
       const asset = await getAsset(ctx, str(p.assetId, 'machine'));
       requirePerimeter(ctx, asset);
+      if (action === 'WO_RECORD') await validateParts(ctx, p.parts);
       const assignees = isResp ? await resolveAssignees(ctx, p.assigneeIds) : { ids: [actor.id], names: [actor.name] };
       const wo = await createWorkOrder(ctx, {
         kind: p.kind === 'PREVENTIF' ? 'PREVENTIF' : 'CORRECTIF',
@@ -1308,7 +1319,7 @@ export async function handleGmaoAction(ctx: Ctx, action: string, p: any): Promis
     // ── Réglages ──
     case 'SETTINGS_SAVE': {
       const next: GmaoSettings = { ...(await settingsOf(ctx)) };
-      for (const k of ['requireApproval', 'techniciansSelfPlan', 'publicReports', 'assetHierarchy'] as const) if (k in p) (next as any)[k] = !!p[k];
+      for (const k of ['requireApproval', 'techniciansSelfPlan', 'publicReports', 'assetHierarchy', 'stockTechniciansCanTake'] as const) if (k in p) (next as any)[k] = !!p[k];
       if ('safetyChecklistId' in p) next.safetyChecklistId = p.safetyChecklistId || null;
       if ('assetCodeMode' in p) next.assetCodeMode = p.assetCodeMode === 'MANUAL' ? 'MANUAL' : 'GENERATED';
       if ('assetCodePrefix' in p) {

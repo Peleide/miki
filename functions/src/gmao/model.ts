@@ -401,6 +401,7 @@ export interface GmaoSettings {
   priorityDelays: Record<Priority, number>;
   interventionTypes: string[];
   utcOffsetMinutes: number;          // Nouméa : +660, pas d'heure d'été
+  stockTechniciansCanTake: boolean;  // module stock : les techniciens sortent eux-mêmes des pièces
 }
 
 export const DEFAULT_SETTINGS: GmaoSettings = {
@@ -414,6 +415,7 @@ export const DEFAULT_SETTINGS: GmaoSettings = {
   priorityDelays: { ...DEFAULT_PRIORITY_DELAYS },
   interventionTypes: [...DEFAULT_INTERVENTION_TYPES],
   utcOffsetMinutes: 660,
+  stockTechniciansCanTake: false,
 };
 
 export function withDefaults(s: Partial<GmaoSettings> | undefined | null): GmaoSettings {
@@ -452,6 +454,9 @@ export const COLL = {
   clients: 'gmaoClients',
   checklists: 'checklists',
   sites: 'sites',
+  stockItems: 'gmaoStockItems',
+  stockLocations: 'gmaoStockLocations',
+  stockMoves: 'gmaoStockMoves',
 } as const;
 export type CollName = typeof COLL[keyof typeof COLL];
 
@@ -466,3 +471,75 @@ export function tokenFromScan(text: string): string | null {
   const m = String(text || '').trim().match(/\/q\/([A-Za-z0-9_-]{8,64})/);
   return m ? m[1] : null;
 }
+
+// ─── Module stock (option activée par organisation : tenant.modules.stock) ──
+
+export type StockLocationKind = 'MAGASIN' | 'CASIER';
+export interface StockLocation {
+  id: string;
+  kind: StockLocationKind;
+  name: string;
+  parentId: string | null;   // casier → magasin
+  siteId?: string | null;
+  qrToken: string;
+  isArchived?: boolean;
+  createdAt: string;
+}
+
+export interface StockItem {
+  id: string;
+  code: string;              // référence interne
+  name: string;
+  family?: string | null;
+  unit: string;
+  supplierRefs: string[];    // références fournisseurs (plusieurs pour un même article)
+  minQty?: number | null;    // seuil de réapprovisionnement
+  notes?: string | null;
+  qty: number;               // quantité totale
+  levels: Record<string, number>; // quantité par emplacement
+  avgCost: number;           // prix moyen pondéré (XPF)
+  isArchived?: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type StockMoveType = 'ENTREE' | 'SORTIE' | 'RETOUR' | 'TRANSFERT' | 'AJUSTEMENT';
+export const STOCK_MOVE_LABEL: Record<StockMoveType, string> = {
+  ENTREE: 'Entrée', SORTIE: 'Sortie', RETOUR: 'Retour', TRANSFERT: 'Transfert', AJUSTEMENT: 'Ajustement',
+};
+
+/** Mouvement de stock : jamais modifié ni supprimé (seul returnedQty évolue sur une sortie). */
+export interface StockMove {
+  id: string;
+  number: string;            // MVT-AAAA-NNNN
+  type: StockMoveType;
+  itemId: string;
+  itemCode: string;
+  itemName: string;
+  unit: string;
+  qty: number;               // toujours positive
+  delta: number;             // effet sur la quantité totale (ajustement : signé ; transfert : 0)
+  locationId: string;
+  locationName: string;
+  toLocationId?: string | null;
+  toLocationName?: string | null;
+  unitCost: number;          // prix unitaire de valorisation
+  value: number;             // XPF (ajustement : signé)
+  avgCostAfter: number;      // PMP de l'article après le mouvement
+  qtyAfter: number;          // quantité totale après le mouvement
+  at: string;                // date du mouvement
+  createdAt: string;         // date de saisie
+  byId: string;
+  byName: string;
+  reference?: string | null; // bon de livraison, facture, ligne Yooz…
+  reason?: string | null;
+  workOrderId?: string | null;
+  workOrderNumber?: string | null;
+  assetId?: string | null;
+  assetCode?: string | null;
+  sourceMoveId?: string | null; // retour : sortie d'origine
+  returnedQty?: number;      // sortie : quantité déjà retournée
+  opening?: boolean;         // stock d'ouverture (import)
+}
+
+export const STOCK_UNITS = ['pièce', 'litre', 'kg', 'mètre', 'lot', 'boîte', 'jeu'];

@@ -4,6 +4,7 @@ import { QrCode, Search, X, Flag, CameraOff } from 'lucide-react';
 import { useGmao } from './GmaoContext';
 import { Button, Card, Empty, Label, PageHeader, PriorityBadge, StateBadge, fmtTime, WoStatusBadge } from './ui';
 import { RequestFormModal } from './RequestsView';
+import { findLocationFromScan } from './StockView';
 import { Asset, OPEN_WORK_ORDER_STATUSES, tokenFromScan } from '../../functions/src/gmao/model';
 
 /** Retrouve la machine à partir du contenu d'un QR code : URL Miki (/q/jeton) ou code machine. */
@@ -42,10 +43,11 @@ export const TerrainView: React.FC = () => {
       text => {
         if (handled.current) return;
         const asset = findAssetFromScan(g.assets, text);
-        if (asset) {
+        const loc = asset ? undefined : findLocationFromScan(g.stock.locations, text);
+        if (asset || loc) {
           handled.current = true;
           stop();
-          g.openAsset(asset.id);
+          if (asset) g.openAsset(asset.id); else g.openStockLocation(loc!.id);
         } else {
           g.toast(g.isClient ? 'Cette machine ne fait pas partie de votre parc.' : 'QR code inconnu dans le parc.', 'info');
         }
@@ -91,6 +93,12 @@ export const TerrainView: React.FC = () => {
           <Search size={16} className="text-gray-400" />
           <input value={q} onChange={e => setQ(e.target.value)} placeholder="… ou tapez un code, une immatriculation" className="flex-1 py-3 text-sm focus:outline-none" />
         </div>
+        {!results.length && q.trim() && g.stock.enabled && (() => {
+          const loc = findLocationFromScan(g.stock.locations, q);
+          return loc ? (
+            <button onClick={() => g.openStockLocation(loc.id)} className="w-full text-left py-2.5 mt-2 text-sm"><b>Stock</b> · {loc.name}</button>
+          ) : null;
+        })()}
         {results.length > 0 && (
           <div className="mt-2 divide-y divide-border">
             {results.map(a => (

@@ -42,7 +42,7 @@ Write-Host "/csp/  :" (Select-String -Path (Join-Path $repo "dist\csp\index.html
 
 if ($Deploy) {
   # Uniquement les fonctions GMAO : les fonctions historiques en prod restent celles de legacy.
-  $fns = "gmaoAction,gmaoPublic,gmaoDailyPreventiveScan,gmaoCreateOrganization,gmaoSetPlan,gmaoManageUser" -split "," | ForEach-Object { "functions:$_" }
+  $fns = "gmaoAction,gmaoPublic,gmaoDailyPreventiveScan,gmaoCreateOrganization,gmaoSetPlan,gmaoManageUser,gmaoSetModules" -split "," | ForEach-Object { "functions:$_" }
   firebase deploy --project miki-suivi-materiel --only ("firestore:rules,hosting," + ($fns -join ","))
   if ($LASTEXITCODE -ne 0) { throw "deploiement echoue" }
 }

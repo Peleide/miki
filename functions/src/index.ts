@@ -1418,6 +1418,23 @@ export const gmaoCreateOrganization = functions
   });
 
 /** Changement d'offre d'une organisation (administrateur plateforme). */
+/** Modules optionnels d'une organisation GMAO (console plateforme). */
+export const gmaoSetModules = functions
+  .region("australia-southeast1")
+  .https.onCall(async (data, context) => {
+    if (!context.auth) throw new functions.https.HttpsError("unauthenticated", "Connexion requise.");
+    const { isGlobalAdmin } = await verifyAccess(context.auth.uid, "platform", ["ADMIN"]);
+    if (!isGlobalAdmin) throw new functions.https.HttpsError("permission-denied", "Réservé à l'administrateur de la plateforme.");
+    const tenantId = String(data?.tenantId || "");
+    await requireGmaoTenant(tenantId);
+    const modules: Record<string, boolean> = {};
+    if (data?.modules && "stock" in data.modules) modules.stock = !!data.modules.stock;
+    if (!Object.keys(modules).length) throw new functions.https.HttpsError("invalid-argument", "Aucun module à modifier.");
+    await db.collection("tenants").doc(tenantId).set({ modules }, { merge: true });
+    await writeAuditLog({ actorId: context.auth.uid, actorName: "Administrateur plateforme", action: "TENANT_UPDATED", tenantId, targetId: tenantId, details: { modules } });
+    return { success: true, modules };
+  });
+
 export const gmaoSetPlan = functions
   .region("australia-southeast1")
   .https.onCall(async (data, context) => {

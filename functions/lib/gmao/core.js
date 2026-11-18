@@ -14,6 +14,7 @@ const rules_1 = require("./rules");
 const recurrence_1 = require("./recurrence");
 Object.defineProperty(exports, "civilOf", { enumerable: true, get: function () { return recurrence_1.civilOf; } });
 const kits_1 = require("./kits");
+const stock_1 = require("./stock");
 class GmaoError extends Error {
     constructor(code, message) {
         super(message);
@@ -355,6 +356,7 @@ async function closeWorkOrder(ctx, wo, p) {
     }
     const assetStateAfter = isState(p.assetStateAfter) ? p.assetStateAfter : 'OPERATIONNEL';
     const asset = await getAsset(ctx, wo.assetId);
+    const parts = await (0, stock_1.validateParts)(ctx, p.parts);
     const meterAtClose = num(p.meterAtClose);
     if (meterAtClose != null && asset.meterType && (asset.meterValue == null || meterAtClose > asset.meterValue)) {
         await addMeterReading(ctx, asset, meterAtClose, wo.id);
@@ -371,6 +373,8 @@ async function closeWorkOrder(ctx, wo, p) {
         assetStateAfter,
         closedAt: ctx.now.toISOString(), closedById: ctx.actor.id, closedByName: ctx.actor.name,
     }));
+    if (parts.length)
+        await (0, stock_1.consumeParts)(ctx, parts, wo);
     const stateReason = assetStateAfter === 'OPERATIONNEL' ? null : ((p.assetStateReason || '').trim() || `Suite ${wo.number}`);
     await setAssetState(ctx, asset, assetStateAfter, stateReason, wo.id);
     if (!asset.lastMaintenanceAt || asset.lastMaintenanceAt < actualEnd)
@@ -599,8 +603,13 @@ async function handlePublicAction(ctx, action, p) {
     p = p || {};
     const { store, now } = ctx;
     const asset = await assetByToken(store, p.token);
-    if (!asset)
+    if (!asset) {
+        const token = String(p.token || '');
+        if (/^[A-Za-z0-9_-]{8,64}$/.test(token) && (await store.list(model_1.COLL.stockLocations)).some(l => l.qrToken === token && !l.isArchived)) {
+            fail('failed-precondition', "Ce QR code identifie un emplacement de stock : il s'ouvre depuis l'application Miki, avec un compte.");
+        }
         fail('not-found', 'Ce QR code ne correspond à aucune machine active.');
+    }
     const settings = await settingsOf(ctx);
     const tenant = await store.getTenantInfo();
     const [sites, typologies, clients] = await Promise.all([
@@ -670,6 +679,8 @@ async function handlePublicAction(ctx, action, p) {
 }
 // ─── Point d'entrée ─────────────────────────────────────────────────────────
 async function handleGmaoAction(ctx, action, p) {
+    if (stock_1.STOCK_ACTIONS.includes(action))
+        return (0, stock_1.handleStockAction)(ctx, action, p);
     if (!PERMISSIONS[action])
         fail('invalid-argument', `Action inconnue : ${action}`);
     if (!canDo(ctx.actor.role, action))
@@ -1022,6 +1033,8 @@ async function handleGmaoAction(ctx, action, p) {
         case 'WO_RECORD': {
             const asset = await getAsset(ctx, str(p.assetId, 'machine'));
             requirePerimeter(ctx, asset);
+            if (action === 'WO_RECORD')
+                await (0, stock_1.validateParts)(ctx, p.parts);
             const assignees = isResp ? await resolveAssignees(ctx, p.assigneeIds) : { ids: [actor.id], names: [actor.name] };
             const wo = await createWorkOrder(ctx, {
                 kind: p.kind === 'PREVENTIF' ? 'PREVENTIF' : 'CORRECTIF',
@@ -1392,7 +1405,7 @@ async function handleGmaoAction(ctx, action, p) {
         // ── Réglages ──
         case 'SETTINGS_SAVE': {
             const next = { ...(await settingsOf(ctx)) };
-            for (const k of ['requireApproval', 'techniciansSelfPlan', 'publicReports', 'assetHierarchy'])
+            for (const k of ['requireApproval', 'techniciansSelfPlan', 'publicReports', 'assetHierarchy', 'stockTechniciansCanTake'])
                 if (k in p)
                     next[k] = !!p[k];
             if ('safetyChecklistId' in p)

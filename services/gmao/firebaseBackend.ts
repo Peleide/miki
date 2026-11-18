@@ -53,7 +53,7 @@ export function firebaseBackend(me: FirebaseIdentity): GmaoBackend {
     subscribeTenant(cb) {
       return onSnapshot(doc(dbFirestore, 'tenants', tenantId), snap => {
         const d: any = snap.data() || {};
-        cb({ name: d.name || 'Maintenance', plan: d.plan || null, settings: withDefaults(d.gmao) });
+        cb({ name: d.name || 'Maintenance', plan: d.plan || null, settings: withDefaults(d.gmao), modules: d.modules || {} });
       });
     },
     subscribeNotifications(userId, cb) {

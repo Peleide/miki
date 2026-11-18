@@ -6,6 +6,7 @@ import {
 } from '../../functions/src/gmao/model';
 import { inPerimeter } from '../../functions/src/gmao/rules';
 import { useGmao } from './GmaoContext';
+import { PartDraft, PartsPicker, WorkOrderParts, partsPayload } from './StockView';
 import {
   AssetPicker, Badge, Button, Card, ChecklistAnswersView, ChecklistForm, Empty, Field, fmtDate,
   fmtDateTime, fmtNum, fmtTime, fromLocalInput, Info, Input, Label, Modal, PageHeader, PhotoInput,
@@ -243,6 +244,7 @@ export const CloseModal: React.FC<{ wo: WorkOrder; onClose: () => void }> = ({ w
   const asset = g.assetById(wo.assetId);
   const [f, setF] = useState({ report: '', ...defaultTimes(wo), answers: {} as ChecklistAnswers, photos: [] as string[], meter: '', state: 'OPERATIONNEL', stateReason: '' });
   const [safety, setSafety] = useState<ChecklistAnswers>({});
+  const [parts, setParts] = useState<PartDraft[]>([]);
   const [saving, setSaving] = useState(false);
   const set = (k: string, v: any) => setF(p => ({ ...p, [k]: v }));
   const needSafety = wo.status !== 'EN_COURS' && wo.safetyCheckRequired;
@@ -251,7 +253,7 @@ export const CloseModal: React.FC<{ wo: WorkOrder; onClose: () => void }> = ({ w
     const res = await g.run('WO_CLOSE', {
       id: wo.id, report: f.report, actualStart: fromLocalInput(f.start), actualEnd: fromLocalInput(f.end),
       checklistAnswers: wo.checklistId ? f.answers : undefined, photos: f.photos, safetyAnswers: needSafety ? safety : undefined,
-      meterAtClose: f.meter || undefined, assetStateAfter: f.state, assetStateReason: f.stateReason,
+      meterAtClose: f.meter || undefined, assetStateAfter: f.state, assetStateReason: f.stateReason, parts: partsPayload(parts),
     }, 'Intervention réalisée.');
     setSaving(false);
     if (res) onClose();
@@ -264,6 +266,7 @@ export const CloseModal: React.FC<{ wo: WorkOrder; onClose: () => void }> = ({ w
       {wo.procedure && <div className="rounded-2xl bg-gray-50 p-4"><Label className="mb-1">Mode opératoire</Label><p className="text-sm whitespace-pre-wrap text-dark">{wo.procedure}</p></div>}
       {needSafety && <SafetyBlock wo={wo} answers={safety} onChange={setSafety} />}
       <ReportFields asset={asset} checklistId={wo.checklistId} uploadKey={`workOrders/${wo.id}`} value={f} set={set} />
+      <PartsPicker value={parts} onChange={setParts} />
     </Modal>
   );
 };
@@ -275,6 +278,7 @@ export const RecordModal: React.FC<{ asset: Asset; onClose: () => void }> = ({ a
   const [meta, setMeta] = useState({ kind: 'CORRECTIF', title: '', interventionType: g.settings.interventionTypes[0], checklistId: '' });
   const [f, setF] = useState({ report: '', ...defaultTimes(), answers: {} as ChecklistAnswers, photos: [] as string[], meter: '', state: 'OPERATIONNEL', stateReason: '' });
   const [safety, setSafety] = useState<ChecklistAnswers>({});
+  const [parts, setParts] = useState<PartDraft[]>([]);
   const [saving, setSaving] = useState(false);
   const set = (k: string, v: any) => setF(p => ({ ...p, [k]: v }));
   const needSafety = !!g.settings.safetyChecklistId;
@@ -284,7 +288,7 @@ export const RecordModal: React.FC<{ asset: Asset; onClose: () => void }> = ({ a
       assetId: asset.id, kind: meta.kind, title: meta.title, interventionType: meta.interventionType, checklistId: meta.checklistId || null,
       report: f.report, actualStart: fromLocalInput(f.start), actualEnd: fromLocalInput(f.end),
       checklistAnswers: meta.checklistId ? f.answers : undefined, photos: f.photos, safetyAnswers: needSafety ? safety : undefined,
-      meterAtClose: f.meter || undefined, assetStateAfter: f.state, assetStateReason: f.stateReason,
+      meterAtClose: f.meter || undefined, assetStateAfter: f.state, assetStateReason: f.stateReason, parts: partsPayload(parts),
     }, 'Intervention enregistrée.');
     setSaving(false);
     if (res) onClose();
@@ -307,6 +311,7 @@ export const RecordModal: React.FC<{ asset: Asset; onClose: () => void }> = ({ a
       </Field>
       {needSafety && <SafetyBlock wo={{ safetyCheckRequired: true }} answers={safety} onChange={setSafety} />}
       <ReportFields asset={asset} checklistId={meta.checklistId} uploadKey={`assets/${asset.id}`} value={f} set={set} />
+      <PartsPicker value={parts} onChange={setParts} />
     </Modal>
   );
 };
@@ -393,6 +398,7 @@ export const WorkOrderDetailModal: React.FC<{ id: string; onClose: () => void }>
             {checklist && <ChecklistAnswersView checklist={checklist} answers={wo.checklistAnswers} />}
           </div>
         )}
+        <WorkOrderParts woId={wo.id} open={open} />
       </Modal>
       {sub === 'plan' && <PlanModal wo={wo} onClose={() => setSub(null)} />}
       {sub === 'start' && <StartModal wo={wo} onClose={() => setSub(null)} />}

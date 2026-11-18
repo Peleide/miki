@@ -63,10 +63,11 @@ function firestoreStore(db, tenantId) {
         },
         async getTenantInfo() {
             const t = await tenantDoc();
-            return { name: t.name || 'Maintenance', plan: t.plan || null };
+            return { name: t.name || 'Maintenance', plan: t.plan || null, modules: t.modules || {} };
         },
-        async registerQr(token, assetId) {
-            await db.collection(exports.QR_INDEX).doc(token).set({ tenantId, assetId, createdAt: new Date().toISOString() });
+        async registerQr(token, id, kind = 'ASSET') {
+            const target = kind === 'STOCK' ? { kind, locationId: id } : { assetId: id };
+            await db.collection(exports.QR_INDEX).doc(token).set({ tenantId, ...target, createdAt: new Date().toISOString() });
         },
     };
 }

@@ -276,6 +276,7 @@ export const SettingsView: React.FC = () => {
             <Toggle checked={s.techniciansSelfPlan} onChange={v => save({ techniciansSelfPlan: v })} label="Les techniciens gèrent leur planning" hint="Ils planifient eux-mêmes leurs interventions et leurs tâches. Sinon, c’est vous qui attribuez." />
             <Toggle checked={s.publicReports} onChange={v => save({ publicReports: v })} label="Signalement public par QR code" hint="Toute personne qui scanne le QR code avec son téléphone peut signaler un problème, sans compte (nom obligatoire)." />
             <Toggle checked={s.assetHierarchy} onChange={v => save({ assetHierarchy: v })} label="Sous-ensembles et composants" hint="Décomposer une machine (moteur, circuit hydraulique…). Inutile pour la plupart des parcs." />
+            {g.stock.enabled && <Toggle checked={s.stockTechniciansCanTake} onChange={v => save({ stockTechniciansCanTake: v })} label="Les techniciens sortent eux-mêmes des pièces" hint="Module stock. Activé : ils déclarent les pièces utilisées à la clôture et peuvent sortir une pièce d’un casier. Désactivé : vous seul faites les sorties." />}
           </div>
           <div className="mt-3">
             <Field label="Analyse de sécurité avant intervention" hint="Check-list à valider avant de démarrer (ex. Take 5). Un « non » bloque l’intervention.">

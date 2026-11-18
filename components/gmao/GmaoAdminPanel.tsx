@@ -39,6 +39,14 @@ export const GmaoAdminPanel: React.FC<{ tenants: any[]; onChanged: () => void; t
     }
   };
 
+  const toggleStock = async (tenantId: string, on: boolean) => {
+    try {
+      await httpsCallable(functions, 'gmaoSetModules')({ tenantId, modules: { stock: on } });
+      toast(on ? 'Module stock activé.' : 'Module stock désactivé (les données sont conservées).', 'success');
+      onChanged();
+    } catch (err: any) { toast(err?.message || 'Échec.'); }
+  };
+
   const changeTier = async (tenantId: string, tier: PlanTier) => {
     try {
       await httpsCallable(functions, 'gmaoSetPlan')({ tenantId, tier });
@@ -99,7 +107,7 @@ export const GmaoAdminPanel: React.FC<{ tenants: any[]; onChanged: () => void; t
       )}
       {gmaoTenants.length > 0 && (
         <table className="w-full text-sm">
-          <thead><tr className="text-left text-[10px] font-black uppercase tracking-widest text-gray-400 border-b border-border"><th className="py-2">Organisation</th><th className="py-2">Offre</th><th className="py-2">Limites</th></tr></thead>
+          <thead><tr className="text-left text-[10px] font-black uppercase tracking-widest text-gray-400 border-b border-border"><th className="py-2">Organisation</th><th className="py-2">Offre</th><th className="py-2">Limites</th><th className="py-2">Module stock</th></tr></thead>
           <tbody>
             {gmaoTenants.map(t => (
               <tr key={t.id} className="border-b border-gray-50">
@@ -111,6 +119,12 @@ export const GmaoAdminPanel: React.FC<{ tenants: any[]; onChanged: () => void; t
                   </select>
                 </td>
                 <td className="py-2.5 text-xs text-gray-500">{t.plan ? `${t.plan.maxTechnicians} tech. · ${t.plan.maxAssets} machines · ${t.plan.maxClients} clients` : '—'}</td>
+                <td className="py-2.5">
+                  <button type="button" role="switch" aria-checked={!!t.modules?.stock} aria-label={`Module stock ${t.name}`} onClick={() => toggleStock(t.id, !t.modules?.stock)}
+                    className={`relative w-11 h-6 rounded-full transition-colors ${t.modules?.stock ? 'bg-primary' : 'bg-gray-200'}`}>
+                    <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${t.modules?.stock ? 'translate-x-5' : ''}`} />
+                  </button>
+                </td>
               </tr>
             ))}
           </tbody>

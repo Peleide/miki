@@ -1,7 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import {
   Asset, AssetEvent, CalendarTask, COLL, DEFAULT_SETTINGS, GmaoChecklist, GmaoClient, GmaoNotification, GmaoRole,
-  GmaoSettings, GmaoSite, GmaoUser, PmPlan, TenantPlan, Typology, WorkOrder, WorkRequest,
+  GmaoSettings, GmaoSite, GmaoUser, PmPlan, StockItem, StockLocation, StockMove, TenantPlan, Typology, WorkOrder, WorkRequest,
 } from '../../functions/src/gmao/model';
 import { inPerimeter } from '../../functions/src/gmao/rules';
 import { GmaoBackend } from '../../services/gmao/backend';
@@ -30,6 +30,16 @@ export interface GmaoData {
   settings: GmaoSettings;
   users: GmaoUser[];
   notifications: GmaoNotification[];
+  /** Module stock (option activée dans la console plateforme). */
+  stock: {
+    enabled: boolean;
+    /** Le compte peut-il sortir des pièces (responsable, ou technicien si le réglage l'autorise) ? */
+    canTake: boolean;
+    items: StockItem[];
+    locations: StockLocation[];
+    moves: StockMove[];
+  };
+  openStockLocation: (id: string) => void;
   assetById: (id?: string | null) => Asset | undefined;
   siteName: (id?: string | null) => string;
   typologyName: (id?: string | null) => string;
@@ -65,15 +75,19 @@ interface ProviderProps {
   openAsset: (id: string) => void;
   openWorkOrder: (id: string) => void;
   openRequest: (id: string) => void;
+  openStockLocation: (id: string) => void;
 }
 
-function useCollection<T>(backend: GmaoBackend, coll: any, setLoaded: (k: string) => void): T[] {
+function useCollection<T>(backend: GmaoBackend, coll: any, setLoaded: (k: string) => void, enabled = true): T[] {
   const [docs, setDocs] = useState<T[]>([]);
-  useEffect(() => backend.subscribe<T>(coll, d => { setDocs(d); setLoaded(coll); }), [backend, coll]);
+  useEffect(() => {
+    if (!enabled) { setDocs([]); return; }
+    return backend.subscribe<T>(coll, d => { setDocs(d); setLoaded(coll); });
+  }, [backend, coll, enabled]);
   return docs;
 }
 
-export const GmaoProvider: React.FC<ProviderProps> = ({ backend, me, children, navigate, openAsset, openWorkOrder, openRequest }) => {
+export const GmaoProvider: React.FC<ProviderProps> = ({ backend, me, children, navigate, openAsset, openWorkOrder, openRequest, openStockLocation }) => {
   const { toast, confirm, prompt, dialogNode } = useDialog();
   const [loaded, setLoadedState] = useState<Record<string, boolean>>({});
   const setLoaded = useCallback((k: string) => setLoadedState(prev => (prev[k] ? prev : { ...prev, [k]: true })), []);
@@ -91,10 +105,15 @@ export const GmaoProvider: React.FC<ProviderProps> = ({ backend, me, children, n
   const [settings, setSettings] = useState<GmaoSettings>(DEFAULT_SETTINGS);
   const [plan, setPlan] = useState<TenantPlan | null>(null);
   const [tenantName, setTenantName] = useState('');
+  const [modules, setModules] = useState<Record<string, boolean>>({});
+  const stockOn = !!modules.stock && me.role !== 'CLIENT';
+  const stockItems = useCollection<StockItem>(backend, COLL.stockItems, setLoaded, stockOn);
+  const stockLocations = useCollection<StockLocation>(backend, COLL.stockLocations, setLoaded, stockOn);
+  const stockMoves = useCollection<StockMove>(backend, COLL.stockMoves, setLoaded, stockOn);
   const [users, setUsers] = useState<GmaoUser[]>([]);
   const [notifications, setNotifications] = useState<GmaoNotification[]>([]);
 
-  useEffect(() => backend.subscribeTenant(t => { setSettings(t.settings); setPlan(t.plan); setTenantName(t.name); }), [backend]);
+  useEffect(() => backend.subscribeTenant(t => { setSettings(t.settings); setPlan(t.plan); setTenantName(t.name); setModules(t.modules || {}); }), [backend]);
   useEffect(() => backend.subscribeNotifications(me.id, setNotifications), [backend, me.id]);
   useEffect(() => { backend.listUsers().then(setUsers).catch(() => setUsers([me])); }, [backend, me.id]);
 
@@ -130,6 +149,12 @@ export const GmaoProvider: React.FC<ProviderProps> = ({ backend, me, children, n
     loading: !(loaded[COLL.assets] && loaded[COLL.workOrders] && loaded[COLL.requests]),
     tenantName, plan,
     assets, events, sites, requests, workOrders, pmPlans, tasks, checklists, typologies, clients, settings, users, notifications,
+    stock: {
+      enabled: stockOn,
+      canTake: stockOn && (me.role === 'RESPONSABLE' || (isTech && settings.stockTechniciansCanTake)),
+      items: stockItems, locations: stockLocations, moves: stockMoves,
+    },
+    openStockLocation,
     assetById: (id) => (id ? assetMap.get(id) : undefined),
     siteName: (id) => (id ? siteMap.get(id) || '—' : '—'),
     typologyName: (id) => (id ? typMap.get(id) || '—' : '—'),

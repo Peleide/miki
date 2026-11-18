@@ -9,6 +9,7 @@ export interface MemoryState {
   users: GmaoUser[];
   tenantName: string;
   plan: TenantPlan | null;
+  modules?: Record<string, boolean>;
 }
 
 export function emptyState(users: GmaoUser[] = [], plan: TenantPlan | null = null, tenantName = 'Démo'): MemoryState {
@@ -35,7 +36,7 @@ export function memoryStore(state: MemoryState, onChange?: (coll: string) => voi
     async getSettings() { return withDefaults(state.settings); },
     async saveSettings(s) { state.settings = copy(s); onChange?.('settings'); },
     async getUsers() { return copy(state.users); },
-    async getTenantInfo() { return { name: state.tenantName || 'Démo', plan: state.plan ? copy(state.plan) : null }; },
+    async getTenantInfo() { return { name: state.tenantName || 'Démo', plan: state.plan ? copy(state.plan) : null, modules: { ...(state.modules || {}) } }; },
     async registerQr() { /* l'index global n'existe qu'en production */ },
   };
 }

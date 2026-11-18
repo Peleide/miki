@@ -60,10 +60,11 @@ export function firestoreStore(db: Firestore, tenantId: string): GmaoStore {
     },
     async getTenantInfo(): Promise<TenantInfo> {
       const t = await tenantDoc();
-      return { name: t.name || 'Maintenance', plan: t.plan || null };
+      return { name: t.name || 'Maintenance', plan: t.plan || null, modules: t.modules || {} };
     },
-    async registerQr(token: string, assetId: string) {
-      await db.collection(QR_INDEX).doc(token).set({ tenantId, assetId, createdAt: new Date().toISOString() });
+    async registerQr(token: string, id: string, kind: 'ASSET' | 'STOCK' = 'ASSET') {
+      const target = kind === 'STOCK' ? { kind, locationId: id } : { assetId: id };
+      await db.collection(QR_INDEX).doc(token).set({ tenantId, ...target, createdAt: new Date().toISOString() });
     },
   };
 }
